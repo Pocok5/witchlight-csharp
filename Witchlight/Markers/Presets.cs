@@ -107,7 +107,7 @@ public class Person
 
     /// <summary>
     /// Whether a new marker of theirs is private, where they have decided.
-    /// Absent means the operator's <c>markers_public</c> decides, which is where
+    /// Absent means the operator's <c>allow_public_markers</c> decides, which is where
     /// everybody starts.
     /// </summary>
     public bool? PrivateByDefault { get; set; }

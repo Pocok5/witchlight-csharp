@@ -14,7 +14,7 @@ namespace Witchlight;
 /// writing and the forgetting for every answer of that shape.
 ///
 /// Only a choice somebody actually made is stored. A marker nobody has decided
-/// about falls back to <c>markers_public</c>, which is what that setting has
+/// about falls back to <c>allow_public_markers</c>, which is what that setting has
 /// always meant, so the store holds one entry per decision rather than one per
 /// marker and stays empty on a server where nobody uses the web form.
 /// </summary>

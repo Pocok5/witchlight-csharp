@@ -93,67 +93,42 @@ public static class Settings
     public static bool Announces => On("announce", byDefault: true);
 
     /// <summary>
-    /// Whether a marker nobody has decided about belongs to everybody.
-    ///
-    /// Off by default: a marker a player drops is theirs until they say
-    /// otherwise. An operator running a map the whole server is meant to share
-    /// turns it on, and every marker without a decision of its own goes to
-    /// everyone — in the game and on the web both, which is why the setting sits
-    /// with the map rather than in a file of this mod's own.
+    /// When true, a new marker whose owner has not chosen a visibility is visible
+    /// to everyone. When false, only its owner sees it. Default false. The map
+    /// service reads the same setting, so the in-game map and the web map agree.
     /// </summary>
-    public static bool MarkersPublic => On("markers_public", byDefault: false);
+    public static bool MarkersPublic => On("allow_public_markers", byDefault: false);
 
     /// <summary>
-    /// What a marker nobody has chosen for is, said the way the code asks it.
-    ///
-    /// Three places were each writing the negation of the setting above, which is
-    /// three chances to get the polarity backwards and show somebody's markers to
-    /// a server. It is one question — is an undecided marker private — so it has
-    /// one answer here and every caller is a thin read of it.
+    /// The negation of <see cref="MarkersPublic"/>, so that every caller asks the
+    /// question the same way round.
     /// </summary>
     public static bool MarkersPrivateByDefault => !MarkersPublic;
 
     /// <summary>
-    /// Whether a marker anybody can see is a marker anybody can change.
-    ///
-    /// Off by default: being shown something is not being handed it. An operator
-    /// running a map the server keeps together — shared trader routes, a road
-    /// nobody owns — turns it on, and then a public marker is everyone's to
-    /// correct. A private marker is never anybody's but its owner's, whatever
-    /// this says.
+    /// When true, any signed-in player may edit a public marker. When false, only
+    /// the owner may edit it. A private marker can only ever be edited by its
+    /// owner. Default false.
     /// </summary>
-    public static bool PublicMarkersEditable => On("markers_public_editable", byDefault: false);
+    public static bool PublicMarkersEditable => On("allow_editing_public_markers", byDefault: false);
 
     /// <summary>
-    /// Whether where a player is standing is everybody's to see.
+    /// When true, every player's position is sent to every viewer. When false, a
+    /// player's position is sent only to members of their own group. Default
+    /// true. <see cref="PrivateMap"/> overrides it: while personal maps are on,
+    /// positions are always restricted to the player's own group.
     ///
-    /// On by default, which is what a map of a server people play on together is
-    /// for. An operator running a server where being findable is not part of the
-    /// deal turns it off, and then a player shows on the map to their own group
-    /// and to nobody else. How many are online is still said to everyone: that is
-    /// a fact about the server rather than about anybody on it.
-    ///
-    /// Vintage Story has no setting of its own to follow. Its server config says
-    /// nothing about who may see whom, and the nearest thing in the world config,
-    /// `allowMap`, decides whether there is a map at all — a different question.
-    /// So this is witchlight's own, and it sits with the map settings because it
-    /// is the map it is about.
-    ///
-    /// Enforced here rather than by the service, for the reason the markers are:
-    /// this is the half that knows what groups the game has people in, and a
-    /// service holding positions it must not send is one bug from sending them.
+    /// The mod enforces this, because the mod is the half that knows the groups.
     /// </summary>
-    public static bool PlayersPublic => On("players_public", byDefault: true) && !PrivateMap;
+    public static bool PlayersPublic => On("show_players_to_everyone", byDefault: true) && !PrivateMap;
 
     /// <summary>
-    /// Whether each person is shown the map as they last saw it, rather than the
-    /// map as it is. The service is the half that draws it that way; what this
-    /// half does about it is keep where a player stands to their own group,
-    /// whatever `players_public` says — a map that hides the ground somebody
-    /// built on must not show the people standing on it — and tell the service
-    /// who is in which group.
+    /// When true, each player sees only the terrain they have explored. The map
+    /// service draws the map that way; the mod's part is to restrict each
+    /// player's position to their own group and to tell the service who is in
+    /// which group. Default true.
     /// </summary>
-    public static bool PrivateMap => On("private_map", byDefault: true);
+    public static bool PrivateMap => On("personal_maps", byDefault: true);
 
     /// <summary>
     /// Whether the map draws the claims the world made for itself.

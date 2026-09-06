@@ -14,7 +14,7 @@ namespace Witchlight;
 /// back would put a second copy on their map.
 ///
 /// **Whose markers travel is their owner's decision, and the operator sets the
-/// default.** A marker a player drops is theirs; `markers_public` in the map's
+/// default.** A marker a player drops is theirs; `allow_public_markers` in the map's
 /// settings decides only the ones nobody has chosen for. A choice made on the web
 /// form overrides it in both directions, which is why the question is asked of
 /// <see cref="Visibility"/> rather than of the setting.

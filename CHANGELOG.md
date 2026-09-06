@@ -13,6 +13,33 @@ While Witchlight is alpha, a format change **clears the map** on start rather th
 upgrading it. It rebuilds as players explore. Read the release note before
 upgrading a server whose map you would rather keep.
 
+## 0.50.1
+
+**Deploy note:** both halves, upgraded together; nothing is cleared. Moved for
+the map service: the hotkey reminder under the map is a three-column grid —
+see its changelog. Nothing here changed.
+
+## 0.50.0
+
+**Deploy note:** both halves, upgraded together; nothing is cleared. **Seven
+settings are renamed and the old names are refused** by both halves. See the map
+service's changelog for the table. The mod reads `allow_public_markers`,
+`allow_editing_public_markers`, `show_players_to_everyone` and `personal_maps`
+under their new names; a file still using the old names gets the defaults for
+those four and the service refuses to start, naming the new keys.
+
+## 0.49.2
+
+**Deploy note:** both halves, upgraded together; nothing is cleared. Moved for
+the map service: the hotkey rows and the readout under the map — see its
+changelog.
+
+## 0.49.1
+
+**Deploy note:** both halves, upgraded together; nothing is cleared. Moved for
+the map service: a language pass over what the web map and the service say —
+see its changelog.
+
 ## 0.49.0
 
 **Deploy note:** both halves, upgraded together; nothing is cleared. Moved for

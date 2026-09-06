@@ -582,7 +582,7 @@ other to answer a keypress. Change one and change the other.
 ### Who may see a marker
 
 One rule, asked in one place, and both maps obey it. A marker its owner chose for
-goes where they chose; a marker nobody has chosen for follows `markers_public` in
+goes where they chose; a marker nobody has chosen for follows `allow_public_markers` in
 the service's settings, which is what that setting has always meant. Off — the
 default — keeps it to its owner; on shares it with everybody.
 
