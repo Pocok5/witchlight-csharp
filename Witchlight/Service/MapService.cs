@@ -311,6 +311,95 @@ public sealed class MapService : IDisposable
     }
 
     /// <summary>
+    /// One plugin's registration. Null where the service took it, and what it
+    /// said where it did not.
+    ///
+    /// The whole of what <see cref="WitchlightPlugins"/> needs from this class:
+    /// the address, the token and the recovery from both moving already live
+    /// here, and a plugin gets at them by going through rather than by being
+    /// handed a copy of any of it.
+    /// </summary>
+    public Task<string?> PluginRegister(string id, string shape) =>
+        Told($"/plugins/register/{id}", shape);
+
+    /// <summary>Rows from a plugin's collector. Null where they landed.</summary>
+    public Task<string?> PluginStore(string id, string body) =>
+        Told($"/plugins/data/{id}", body);
+
+    /// <summary>
+    /// What the service is holding for one plugin, as JSON, or null where it
+    /// could not be asked.
+    ///
+    /// On the map's own port rather than the API channel, because this is the
+    /// same question a browser asks and the same answer. Without a session,
+    /// which for an owner-scoped plugin means an empty list — a plugin reading
+    /// its own rows back does so to migrate them, and that is a thing the mod
+    /// does on the service's own side rather than on anybody's behalf.
+    /// </summary>
+    public async Task<string?> PluginQuery(string id, string query)
+    {
+        var endpoint = Where();
+        if (endpoint is null)
+        {
+            return null;
+        }
+
+        try
+        {
+            using var message = new HttpRequestMessage(HttpMethod.Get, $"{endpoint.Url}/data/{id}{query}");
+            message.Headers.Authorization = new AuthenticationHeaderValue("Bearer", endpoint.Token);
+            using var reply = await _client.SendAsync(message).ConfigureAwait(false);
+            if (reply.StatusCode == HttpStatusCode.Unauthorized)
+            {
+                _endpoint = null;
+            }
+
+            return reply.IsSuccessStatusCode
+                ? await reply.Content.ReadAsStringAsync().ConfigureAwait(false)
+                : null;
+        }
+        catch (Exception error)
+        {
+            _endpoint = null;
+            _log.Debug("[witchlight] plugin {0} could not be asked: {1}", id, error.Message);
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// A post of JSON already written, and what came back where it was refused.
+    ///
+    /// Null means it landed, which reads oddly until it is read as the answer to
+    /// "what went wrong" — and it is that, because every caller of this wants
+    /// the complaint rather than the reply.
+    /// </summary>
+    private async Task<string?> Told(string path, string json)
+    {
+        var endpoint = Where();
+        if (endpoint is null)
+        {
+            return $"no service yet at {ConnectionPath(_exports)}";
+        }
+
+        try
+        {
+            using var reply = await Reach(endpoint, path, json).ConfigureAwait(false);
+            if (reply.IsSuccessStatusCode)
+            {
+                return null;
+            }
+
+            var said = await reply.Content.ReadAsStringAsync().ConfigureAwait(false);
+            return string.IsNullOrWhiteSpace(said) ? $"the map answered {(int)reply.StatusCode}" : said;
+        }
+        catch (Exception error)
+        {
+            _endpoint = null;
+            return error.Message;
+        }
+    }
+
+    /// <summary>
     /// Asks the service for a login word for one player, and gives back the whole
     /// address to hand them — or null where there is none to give.
     /// </summary>

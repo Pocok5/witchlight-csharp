@@ -67,6 +67,79 @@ public partial class WitchlightSystem : ModSystem
     /// <summary>Where live data goes, in place of a file rewritten every two seconds.</summary>
     private MapService? _service;
 
+    private WitchlightPlugins? _plugins;
+
+    /// <summary>
+    /// What another mod uses to keep rows on the map.
+    ///
+    /// Null until the world is up, because which directory the map lives in
+    /// depends on which world loaded. A plugin should not have to know that, and
+    /// should not have to guess when it stops being null — <see cref="Ready"/>
+    /// is what says so.
+    /// </summary>
+    public WitchlightPlugins? Plugins => _plugins;
+
+    /// <summary>
+    /// Everybody waiting to be told the map is open.
+    ///
+    /// Held rather than fired and forgotten, so that a plugin which asks after
+    /// the fact is answered rather than left waiting forever for an event that
+    /// has already happened.
+    /// </summary>
+    private readonly List<Action<WitchlightPlugins>> _waiting = new();
+
+    /// <summary>
+    /// Calls <paramref name="then"/> when Witchlight can be asked for anything,
+    /// or at once where it already can be.
+    ///
+    /// The one thing a plugin needs to know about Witchlight's own start-up, and
+    /// the reason it exists rather than being left to the plugin: the map cannot
+    /// offer anything until the world is up, since which world loaded is what
+    /// decides where the map is kept. A plugin that registered from its own
+    /// <c>StartServerSide</c> found a Witchlight that was loaded and not yet
+    /// open, and the only sign was a line in the log — so which moment is the
+    /// right one is Witchlight's answer to give, not a thing for every plugin to
+    /// work out and get wrong separately.
+    ///
+    /// <code>
+    /// api.ModLoader.GetModSystem&lt;WitchlightSystem&gt;()?.Ready(async plugins =&gt;
+    /// {
+    ///     mine = await plugins.Register(Mod, shape);
+    /// });
+    /// </code>
+    /// </summary>
+    public void Ready(Action<WitchlightPlugins> then)
+    {
+        if (_plugins is { } already)
+        {
+            then(already);
+            return;
+        }
+        _waiting.Add(then);
+    }
+
+    /// <summary>Tells everybody who was waiting, once and in the order they asked.</summary>
+    private void TellThemItIsOpen()
+    {
+        if (_plugins is not { } plugins)
+        {
+            return;
+        }
+
+        // Taken before they are called: one of them registering a plugin that
+        // itself asks would otherwise be adding to the list being walked.
+        var waiting = _waiting.ToArray();
+        _waiting.Clear();
+
+        foreach (var told in waiting)
+        {
+            // A plugin that throws while starting is a plugin that does not draw.
+            // It is not a reason for the map to stop, nor for the next plugin to
+            // go untold.
+            Doing("telling a plugin the map is open", () => told(plugins));
+        }
+    }
+
     /// <summary>Where the map service may ask this mod for one more column.</summary>
     private ModApi? _modApi;
 
@@ -139,6 +212,7 @@ public partial class WitchlightSystem : ModSystem
         _icons = new IconExchange(api, Settings.Exports);
         _portraits = new PortraitExchange(api, Settings.Exports);
         _service = new MapService(Settings.Exports, api.Logger);
+        _plugins = new WitchlightPlugins(_service, api.Logger, Settings.Exports);
     }
 
     /// <summary>Running one piece of work, and never letting it out.</summary>
@@ -263,6 +337,9 @@ public partial class WitchlightSystem : ModSystem
             _modApi.Start();
             StartService();
             BeginSeeding(api);
+            // Last, so that a plugin told the map is open finds everything it
+            // might ask for already built.
+            TellThemItIsOpen();
         }));
     }
 
@@ -326,6 +403,12 @@ public partial class WitchlightSystem : ModSystem
         // nothing by the time a disk has finished with it.
         api.Event.RegisterGameTickListener(Every("posting players", () =>
             _service?.Players(PlayerFeed.Json(api, Settings.Exports))), LiveIntervalMs);
+
+        // What plugins have collected since the last beat. On a clock rather
+        // than as each row is made, because a collector scanning ore makes rows
+        // far faster than a round trip retires them — see `WitchlightPlugins`.
+        api.Event.RegisterGameTickListener(Every("sending plugin rows", () =>
+            _plugins?.Drain()), LiveIntervalMs);
 
         // On the same beat, and for the same reason: a clock belongs to the
         // server that is running, not to a file beside the map.

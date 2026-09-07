@@ -13,6 +13,38 @@ While Witchlight is alpha, a format change **clears the map** on start rather th
 upgrading it. It rebuilds as players explore. Read the release note before
 upgrading a server whose map you would rather keep.
 
+## 0.51.1
+
+**Deploy note:** both halves, upgraded together; nothing is cleared.
+
+- A plugin registering now waits for the map service instead of asking once.
+  The service is a process this mod starts, and it writes the file naming its
+  port a moment after it is started — so the first ask landed before there was
+  anything to ask, and the plugin was refused with "no service yet" and never
+  tried again. It stored nothing until the server was restarted, and even that
+  only worked by luck of timing.
+
+## 0.51.0
+
+**Deploy note:** both halves, upgraded together; nothing is cleared. The map
+service's data addresses lose their `.json` — see its changelog. This half is
+updated to match and needs nothing done.
+
+- A plugin API. Another mod may declare what rows it keeps on the map, send
+  them, and ship the script and pictures the map draws them with. Reached with
+  `api.ModLoader.GetModSystem<WitchlightSystem>()`, which answers `Ready(...)`
+  when the map is open — a plugin never has to work out when that is, which is a
+  thing only this mod knows.
+- A plugin's own files are copied out of its mod and beside the map when it
+  registers, so installing a plugin is installing one mod and nothing else.
+  They live in a `plugin/` directory inside the mod: `viewer.js` at its root,
+  whatever else it is written across in `scripts/`, and what it ships for the
+  page to show in `assets/`.
+- Rows are queued and sent on a tick rather than as they are made, so a plugin
+  that finds a thousand things at once neither blocks the game nor loses them.
+  Who a row belongs to travels as the player rather than as a uid, so a plugin
+  cannot give the map a name and an id that disagree.
+
 ## 0.50.2
 
 **Deploy note:** both halves, upgraded together; nothing is cleared. Moved for
