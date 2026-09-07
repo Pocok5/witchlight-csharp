@@ -1,15 +1,14 @@
 namespace Witchlight;
 
 /// <summary>
-/// Reading pixels back off the graphics card.
+/// Reads pixels back off the graphics card.
 ///
-/// The one thing the mod API has no call for: it will upload a texture and render
-/// into one, but never hand the result back. The game does this with the same
-/// OpenGL binding, so this does too.
+/// The mod API uploads a texture and renders into one but never hands the result
+/// back, so this calls the same OpenGL binding the game does.
 ///
 /// Every OpenGL type stays inside the method body and none appears in a signature,
-/// so nothing here is resolved until it is called — and it is only ever called on a
-/// client. A dedicated server has no such library to find and never looks for one.
+/// so nothing here resolves until it is called, and only a client calls it. A
+/// dedicated server never looks for the library.
 /// </summary>
 internal static class Readback
 {

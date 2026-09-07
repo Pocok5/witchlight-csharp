@@ -5,54 +5,53 @@ using System.Text;
 namespace Witchlight;
 
 /// <summary>
-/// The pictures players sent of themselves: what one may be, how often one may
-/// arrive, and where it is kept.
+/// Stores the pictures players send of themselves, and defines what one may be
+/// and how often one may arrive.
 ///
-/// Kept beside the marker icons, and served the same way: a file per player, named
-/// so that a name is only ever a name. A player uid is not — the game's are base64
-/// and carry `+` and `/`, which is a path and not a filename — so what is stored is
-/// the uid in hex. It is not meant to be read, only to be unambiguous, and both the
-/// file and the name handed to the viewer come from here.
+/// Keeps a file per player beside the marker icons, served the same way. The
+/// game's player uids are base64 and carry `+` and `/`, which read as a path, so
+/// the file is named with the uid in hex. That name is not meant to be read, only
+/// to be unambiguous, and both the file and the name handed to the viewer come
+/// from here.
 ///
-/// The two periods below are a pair and are stated together on purpose: one is how
-/// fast a client sends and the other is how fast the server will take, and a pair
-/// kept in two files drifts apart the first time either is tuned.
+/// <see cref="QuietFor"/> and <see cref="LeastApart"/> are a pair and live in one
+/// file so that tuning either keeps them in step. One is how fast a client sends
+/// and the other is how fast the server will take.
 /// </summary>
 public static class Portraits
 {
     /// <summary>
-    /// The most a portrait may weigh.
+    /// The largest portrait the server will accept, in bytes.
     ///
-    /// A 128 pixel PNG is a few kilobytes. This is not a tuning figure but a limit
-    /// on what an untrusted client can make the server write.
+    /// A 128 pixel PNG is a few kilobytes. This is a limit on what an untrusted
+    /// client can make the server write, not a tuning figure.
     /// </summary>
     public const int Limit = 512 * 1024;
 
     /// <summary>
     /// How long a character must go unchanged before its client sends a picture.
     ///
-    /// Long enough that a run of changes is one wait rather than a queue of them,
-    /// short enough that somebody who changes their hat and walks off is drawn
-    /// wearing it before they forget they did.
+    /// Long enough that a run of changes costs one wait, short enough that
+    /// somebody who changes their hat and walks off is drawn wearing it.
     /// </summary>
     public const int QuietMs = 30000;
 
     /// <summary>
-    /// The least time between two pictures a client sends unasked.
+    /// The least time between two pictures a client may send unasked.
     ///
-    /// The quiet period is the fastest an honest client sends on its own — a change
-    /// restarts it, so two pictures cost two settles — so the floor is derived from
-    /// it rather than chosen beside it, and sits just under so that a slow packet
-    /// never turns an honest picture into a refusal.
+    /// Derived from <see cref="QuietFor"/>, which is the fastest an honest client
+    /// sends on its own, since a change restarts the wait and two pictures cost two
+    /// settles. Sits just under it so a slow packet never turns an honest picture
+    /// into a refusal.
     ///
-    /// It bounds only what a client sends of its own accord. What the server asked
-    /// for is not counted against it: the server knows how often it asks.
+    /// Bounds only what a client sends of its own accord. A picture the server
+    /// asked for does not count against it.
     /// </summary>
     public const int FloorMs = QuietMs - 5000;
 
     public static string DirectoryIn(string exports) => Path.Combine(exports, "portraits");
 
-    /// <summary>What a player's picture is called, without the extension.</summary>
+    /// <summary>Returns the name of a player's picture, without the extension.</summary>
     public static string NameFor(string uid)
     {
         var hex = new StringBuilder(uid.Length * 2);
@@ -64,15 +63,13 @@ public static class Portraits
     }
 
     /// <summary>
-    /// The stored picture for a player: what it is called and when it was drawn,
-    /// or nothing where they have none.
+    /// Returns the name and modification time of a player's stored picture, or
+    /// null when they have none. Both come from one look at the file.
     ///
-    /// Both, from the one look at the file. The name says which picture and never
-    /// changes — it is derived from the player, and a player who is redrawn keeps
-    /// it — so on its own it cannot tell a new picture from the one it replaced.
-    /// The time is what makes two pictures under one name distinguishable, which
-    /// is what anything holding a copy of the last one needs in order to find out
-    /// it is holding the wrong one.
+    /// The name is derived from the player and never changes, so a redrawn player
+    /// keeps it and the name alone cannot tell a new picture from the one it
+    /// replaced. The time is what distinguishes two pictures under one name, which
+    /// is what anything caching the last one needs.
     /// </summary>
     public static (string Name, long At)? StoredFor(string exports, string uid)
     {
@@ -89,11 +86,10 @@ public static class Portraits
     }
 
     /// <summary>
-    /// Writes one, and says what happened either way.
+    /// Writes one picture and returns what happened.
     ///
-    /// The bytes are checked to be a PNG before any of them are written. They came
-    /// off the network, and a server that writes whatever it is handed under a name
-    /// it will later serve is a server that hosts whatever it is handed.
+    /// Checks the bytes are a PNG before writing any of them. They came off the
+    /// network, and the server later serves the file under the name it wrote.
     /// </summary>
     public static bool Save(string exports, string uid, byte[]? png, out string said)
     {
@@ -123,10 +119,9 @@ public static class Portraits
 
         try
         {
-            // A character can be taken apart and put back exactly as it was, and
-            // what comes back is the picture already on disk. The stored one is
-            // then correct without being rewritten, which is the difference
-            // between a drive that wears out and one that does not.
+            // A character taken apart and put back exactly as it was redraws to
+            // the picture already on disk. Leave the stored file alone rather than
+            // rewriting identical bytes.
             var path = Path.Combine(DirectoryIn(exports), NameFor(uid) + ".png");
             said = Disk.WriteBytes(path, png)
                 ? $"{png.Length} bytes"
@@ -140,7 +135,7 @@ public static class Portraits
         }
     }
 
-    /// <summary>How many are stored, for saying so in the status.</summary>
+    /// <summary>Returns how many portraits are stored, for the status line.</summary>
     public static int Count(string exports)
     {
         try

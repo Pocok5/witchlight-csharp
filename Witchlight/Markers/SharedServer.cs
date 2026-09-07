@@ -7,17 +7,16 @@ using Vintagestory.API.Server;
 namespace Witchlight;
 
 /// <summary>
-/// Sends every player the markers belonging to everyone else that they are meant
-/// to see, so the in-game map can show more than only your own.
+/// Sends each player the markers belonging to everyone else that they may see, so
+/// the in-game map shows more than their own.
 ///
-/// A player's own markers are left out: they already have those, and sending them
+/// Leaves out a player's own markers. They already have those, and sending them
 /// back would put a second copy on their map.
 ///
-/// **Whose markers travel is their owner's decision, and the operator sets the
-/// default.** A marker a player drops is theirs; `allow_public_markers` in the map's
-/// settings decides only the ones nobody has chosen for. A choice made on the web
-/// form overrides it in both directions, which is why the question is asked of
-/// <see cref="Visibility"/> rather than of the setting.
+/// **A marker's owner decides whether it travels, and the operator sets the
+/// default.** `allow_public_markers` decides only the markers nobody has chosen
+/// for, and a choice made on the web form overrides it in both directions. So this
+/// asks <see cref="Visibility"/> rather than the setting.
 /// </summary>
 public static class SharedServer
 {
@@ -31,9 +30,8 @@ public static class SharedServer
             return shared;
         }
 
-        // Read each time rather than held, so an operator changing their mind
-        // takes effect on the next send instead of the next restart — the same
-        // rule the announcement follows.
+        // Read the setting each send rather than caching it, so an operator's
+        // change takes effect on the next send instead of the next restart.
         var byDefault = Settings.MarkersPrivateByDefault;
         var editable = Settings.PublicMarkersEditable;
 
@@ -60,9 +58,9 @@ public static class SharedServer
                 Icon = Markers.Picture(waypoint.Icon),
                 Color = waypoint.Color,
                 Owner = Markers.OwnerName(api, waypoint.OwningPlayerUid),
-                // Whether this one player keeps it in sight. Asked per send
-                // rather than per marker, because that is the shape of the
-                // question: a pin is one person's and never everyone's.
+                // Ask whether this one player keeps it in sight. A pin is one
+                // person's and never everyone's, so this is asked per send rather
+                // than per marker.
                 Pinned = pins.Kept(waypoint, player.PlayerUID),
                 Editable = Markers.MayEdit(waypoint, player.PlayerUID, isPrivate, editable),
             });
@@ -72,15 +70,17 @@ public static class SharedServer
     }
 
     /// <summary>
-    /// What one player asked of somebody else's marker from their in-game map.
+    /// Applies what one player asked of somebody else's marker from their in-game
+    /// map. Returns true when the marker itself changed.
     ///
-    /// Decided here against the waypoint itself, by the rules the web map's asks
-    /// are decided by — see <see cref="Pending"/> — because a player's map and a
-    /// player's browser are two doors to the one marker. Anybody it is shared
-    /// with may keep it in sight; changing it takes what the operator allowed.
+    /// Decides against the waypoint itself, by the same rules
+    /// <see cref="PendingMarkers"/> applies to the web map's requests, because a
+    /// player's map and a player's browser are two doors to one marker. Anybody the
+    /// marker is shared with may pin it, while changing it needs what the operator
+    /// allowed.
     ///
-    /// Answers whether the marker itself changed, which is what decides who has
-    /// to be told: a pin is one person's map and the marker is everybody's.
+    /// The return value decides who has to be told. A pin changes one person's map
+    /// and the marker changes everybody's.
     /// </summary>
     public static bool Apply(
         ICoreServerAPI api, IServerPlayer player, SharedMarkerChange change,
@@ -125,13 +125,13 @@ public static class SharedServer
     }
 
     /// <summary>
-    /// The preset one player asked to keep from somebody else's marker, or
-    /// nothing where they did not ask or there is no block to key it on.
+    /// Returns the preset one player asked to keep from somebody else's marker, or
+    /// null when they did not ask or there is no block to key it on.
     ///
-    /// Keyed on the block the marker was made on, where the server recorded
-    /// one, and otherwise on the block under it — the rule a marker made on the
-    /// web follows. The name, picture and colour are the marker's as the asker
-    /// saw them, or as they changed them where they may.
+    /// Keys the preset on the block the marker was made on where the server
+    /// recorded one, and otherwise on the block under it, which is the rule a
+    /// marker made on the web follows. Takes the name, picture and colour as the
+    /// asker saw them, or as they changed them where they may.
     /// </summary>
     public static Preset? Keeping(ICoreServerAPI api, SharedMarkerChange change, Origins origins)
     {
@@ -168,9 +168,11 @@ public static class SharedServer
     }
 
     /// <summary>
-    /// Keeps a preset on the map service and tells the asker how it went, off
-    /// the game thread and back on it: nothing waits on the service, and a
-    /// preset that quietly failed is a switch pressed again tomorrow.
+    /// Saves a preset on the map service and tells the asker how it went.
+    ///
+    /// Runs off the game thread and returns to it, so nothing waits on the service.
+    /// Reports the result, because a preset that quietly failed is a switch pressed
+    /// again tomorrow.
     /// </summary>
     public static void Keep(ICoreServerAPI api, MapService service, IServerPlayer player, Preset preset)
     {

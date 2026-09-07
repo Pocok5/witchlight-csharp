@@ -6,16 +6,16 @@ using Vintagestory.API.Common;
 namespace Witchlight;
 
 /// <summary>
-/// What a palette depends on, reduced to a string.
+/// Reduces what a palette depends on to a string.
 ///
-/// This is the **block registry** and nothing else: game version, then every
-/// block's id and code. The server sends its registry to clients on join, so a
-/// connected client computes exactly the same value — which is what makes it
-/// usable as a shared token between the two.
+/// The fingerprint covers the block registry and nothing else: game version,
+/// then every block's id and code. The server sends its registry to clients on
+/// join, so a connected client computes the same value. That is what makes the
+/// fingerprint a shared token between the two.
 ///
-/// Mod lists deliberately play no part. A client has client-side mods the server
-/// has never heard of, and the server has server-side ones the client never
-/// receives, so a fingerprint covering them could never agree across the wire.
+/// Mod lists play no part. A client has client-side mods the server never hears
+/// of, and the server has server-side ones the client never receives, so a
+/// fingerprint covering them could not agree across the wire.
 /// <see cref="LocalStamp"/> covers what that would have caught.
 /// </summary>
 public static class Fingerprint
@@ -33,13 +33,14 @@ public static class Fingerprint
             }
         }
 
-        return Hash(builder.ToString());
+        return Fnv1a.Of(builder.ToString());
     }
 
     /// <summary>
-    /// The mod set as this machine sees it. Never sent anywhere: the server keeps
-    /// it beside its palette so that a mod updating its textures — which changes
-    /// colours without moving a single block id — still invalidates the palette.
+    /// Hashes the mod set as this machine sees it. This value is never sent
+    /// anywhere. The server keeps it beside its palette so that a mod updating
+    /// its textures invalidates the palette. Such an update changes colours
+    /// without moving a single block id.
     /// </summary>
     public static string LocalStamp(ICoreAPI api)
     {
@@ -50,7 +51,7 @@ public static class Fingerprint
         {
             builder.Append(mod.Info.ModID).Append(':').Append(mod.Info.Version).Append(';');
         }
-        return Hash(builder.ToString());
+        return Fnv1a.Of(builder.ToString());
     }
 
     private static string GameVersionOf()
@@ -58,15 +59,4 @@ public static class Fingerprint
         return Vintagestory.API.Config.GameVersion.ShortGameVersion;
     }
 
-    /// <summary>FNV-1a. Not a security boundary — just a way to notice a change.</summary>
-    private static string Hash(string text)
-    {
-        var value = 0xcbf29ce484222325UL;
-        foreach (var b in Encoding.UTF8.GetBytes(text))
-        {
-            value ^= b;
-            value *= 0x100000001b3UL;
-        }
-        return value.ToString("x16");
-    }
 }

@@ -9,27 +9,25 @@ using Vintagestory.API.Server;
 namespace Witchlight;
 
 /// <summary>
-/// The settings both halves read.
+/// Reads the settings file that both the mod and the map service use.
 ///
-/// The file belongs to the map service — it writes it, it owns the format — and
-/// this half wants four or five values out of it. So the values are looked for
-/// rather than parsed: a second reader of a whole format is a second thing to
-/// keep in step with it, while a reader of one line is a reader of one line.
+/// The map service writes the file and owns its format. This class looks up the
+/// handful of values the mod needs rather than parsing the whole format, so
+/// there is only one full parser to keep in step with the format.
 ///
-/// Every setting the mod asks about comes through here. That is what makes "what
-/// does the operator want" one question with one answer, rather than a path
-/// threaded through six call sites and a default written down beside each.
+/// Every setting the mod reads comes through here, so each setting has one
+/// default in one place.
 /// </summary>
 public static class Settings
 {
-    /// <summary>Beside the server's other mod settings, where the service writes it.</summary>
+    /// <summary>The path of the settings file, beside the server's other mod settings.</summary>
     public static string Path => System.IO.Path.Combine(GamePaths.ModConfig, "witchlight.conf");
 
     /// <summary>
-    /// Where map data is kept, before any per-world directory inside it.
+    /// The root directory for map data, before any per-world directory inside it.
     ///
-    /// The `witchlight` folder beside the world data unless the settings name
-    /// somewhere else — a larger disk, a directory a web server already serves.
+    /// Defaults to the `witchlight` folder beside the world data. The `map_data`
+    /// setting overrides it.
     /// </summary>
     public static string MapData
     {
@@ -43,42 +41,34 @@ public static class Settings
     }
 
     /// <summary>
-    /// Whether each world's map goes in a directory of its own.
+    /// True when each world's map goes in a directory of its own.
     ///
-    /// Settled with the rest of it once the world is up, because what an absent
-    /// setting means depends on which side is asking.
+    /// <see cref="ForWorld"/> sets it once the world is up.
     /// </summary>
     public static bool PerWorld { get; private set; }
 
     /// <summary>
-    /// Where every export lands.
+    /// The directory every export lands in.
     ///
-    /// The one directory both halves agree on, so it is named once here rather
-    /// than rebuilt from `GamePaths` wherever somebody needs it. Which world's
-    /// map it is is not known until the world is up, so this is the folder they
-    /// all sit in until <see cref="ForWorld"/> has been told.
+    /// Both halves use this one directory. It is <see cref="MapData"/> until
+    /// <see cref="ForWorld"/> settles the per-world directory.
     /// </summary>
     public static string Exports => _exports ?? MapData;
 
-    /// <summary>Which world's map this is, once a world has said.</summary>
+    /// <summary>The settled per-world export directory, or null before a world loads.</summary>
     private static string? _exports;
 
     /// <summary>
     /// Settles which directory this world's map goes in.
     ///
-    /// Called once the world is up, because until then there is no world to name
-    /// one after. Everything written before that point — the palette, the block
-    /// names, the icons — has to wait for it, which is why they are exported here
-    /// rather than when the assets finish loading.
+    /// Called once the world is up, since the directory is named after the world.
+    /// The palette, the block names and the icons export after this call rather
+    /// than when the assets finish loading.
     /// </summary>
     public static void ForWorld(ICoreServerAPI api)
     {
         // An absent setting means on. Every singleplayer save shares one data
-        // path and would otherwise write into the last world's map, and a
-        // dedicated server loses nothing by filing its one world the same way. A
-        // settings file written before this setting existed says nothing, and
-        // reading that silence as "off" would leave singleplayer with the fault
-        // this fixes.
+        // path, so with it off a save would write into the last world's map.
         PerWorld = On("per_world", byDefault: true);
         _exports = MapDirectory.Settle(api, MapData, PerWorld);
         Directory.CreateDirectory(_exports);
@@ -86,10 +76,10 @@ public static class Settings
 
     private const string ExportDirName = "witchlight";
 
-    /// <summary>Whether the settings ask the mod to run the service itself.</summary>
+    /// <summary>True when the mod runs the map service itself.</summary>
     public static bool Autostarts => On("autostart", byDefault: true);
 
-    /// <summary>Whether a joining player is told where the map is.</summary>
+    /// <summary>True when a joining player is told the map's address.</summary>
     public static bool Announces => On("announce", byDefault: true);
 
     /// <summary>
@@ -99,10 +89,7 @@ public static class Settings
     /// </summary>
     public static bool MarkersPublic => On("allow_public_markers", byDefault: false);
 
-    /// <summary>
-    /// The negation of <see cref="MarkersPublic"/>, so that every caller asks the
-    /// question the same way round.
-    /// </summary>
+    /// <summary>The negation of <see cref="MarkersPublic"/>.</summary>
     public static bool MarkersPrivateByDefault => !MarkersPublic;
 
     /// <summary>
@@ -116,9 +103,8 @@ public static class Settings
     /// When true, every player's position is sent to every viewer. When false, a
     /// player's position is sent only to members of their own group. Default
     /// true. <see cref="PrivateMap"/> overrides it: while personal maps are on,
-    /// positions are always restricted to the player's own group.
-    ///
-    /// The mod enforces this, because the mod is the half that knows the groups.
+    /// positions are always restricted to the player's own group. The mod
+    /// enforces this, because the mod is the half that knows the groups.
     /// </summary>
     public static bool PlayersPublic => On("show_players_to_everyone", byDefault: true) && !PrivateMap;
 
@@ -131,52 +117,42 @@ public static class Settings
     public static bool PrivateMap => On("personal_maps", byDefault: true);
 
     /// <summary>
-    /// Whether the map draws the claims the world made for itself.
+    /// True when the map draws the claims worldgen made around trader camps and
+    /// story structures. Default false.
     ///
-    /// The perimeters worldgen rules round a trader camp or a story structure.
-    /// They are land claims like any other to the game — the map's own
-    /// <see cref="ClaimFeed"/> reads them out of the same list — and they are not
-    /// like any other in the one way that matters here: they carry an owner's
-    /// name with no owner behind it, and they exist from the moment that ground
-    /// generated rather than from the moment somebody found it.
+    /// The game stores these as ordinary land claims, so <see cref="ClaimFeed"/>
+    /// reads them from the same list. They exist from the moment the ground
+    /// generated rather than from the moment a player found them, so drawing them
+    /// tells every viewer where every trader is.
     ///
-    /// Off by default. A web map is the one place every boundary on a server can
-    /// be read at once, from a chair, without going anywhere, so drawing these
-    /// hands every reader the location of every trader — which is not something
-    /// the game gives anybody. An operator running a map that shows the lot turns
-    /// it on.
-    ///
-    /// Read here and enforced by leaving them out of what is sent, never by the
-    /// page declining to draw them: a claim that reached a browser is a claim
-    /// anybody may read out of it.
+    /// The mod enforces the setting by leaving these claims out of what it sends,
+    /// never by having the page decline to draw them. A claim that reached a
+    /// browser can be read out of it.
     /// </summary>
     public static bool ClaimsWorldgen => On("claims.worldgen", byDefault: false);
 
     /// <summary>
-    /// How long to leave between writing what the terrain has done.
+    /// The gap between terrain exports, in milliseconds. Default 10000.
     ///
-    /// The map's own coalescing knob. Everything a chunk does inside one beat is
-    /// written once, so raising this trades how current the terrain is against how
-    /// often the disk is touched — and a world save exports whatever the gap was
-    /// holding, so nothing is ever lost by it, only delayed.
+    /// Every change a chunk makes within one interval is written once. Raising
+    /// the value trades how current the terrain is against how often the disk is
+    /// touched. A world save exports whatever the interval was holding, so a
+    /// change is delayed rather than lost.
     ///
-    /// Held between a second and ten minutes. An export runs on the server's own
-    /// tick, so a gap of nothing is the game spending its time on the map rather
-    /// than on the world; past ten minutes a map is not a picture of a world
-    /// people are playing in. Enforced here because this is the half that acts on
-    /// it — the settings file says the same two numbers in the note above the
-    /// line, which is the only place an operator reads them.
+    /// Clamped between 1000 and 600000. An export runs on the server's own tick,
+    /// so a smaller gap spends server time on the map instead of the world. The
+    /// note above the line in the settings file states the same two bounds.
     /// </summary>
     public static int ExportIntervalMs =>
         Math.Clamp(Number("export_interval_ms", byDefault: 10000), 1000, 600000);
 
     /// <summary>
-    /// The address to give a player, or null when there is none to give.
+    /// Returns the map address to give a player, or null when there is none.
     ///
-    /// What an operator set, if they set anything. A server on the open internet
-    /// is reached at a name, through a proxy, on a port the service never sees, so
-    /// the address it works out for itself is right only on a machine a player can
-    /// reach directly.
+    /// Returns the `announce_url` setting when the operator set one, and
+    /// otherwise <see cref="Address"/>. A server behind a proxy answers at a name
+    /// and port the service never sees, so the address the service works out is
+    /// right only on a machine a player can reach directly.
     /// </summary>
     public static string? Announcement()
     {
@@ -184,20 +160,15 @@ public static class Settings
         return string.IsNullOrWhiteSpace(told) ? Address() : told.Trim();
     }
 
-    /// <summary>
-    /// Where the service writes the addresses it answers on.
-    ///
-    /// Named here because this is the half that reads it, and named once because
-    /// two other places quote it in what they tell an operator to go and look at.
-    /// </summary>
+    /// <summary>The path of the file the service writes its addresses to.</summary>
     public static string AddressPath => System.IO.Path.Combine(Exports, "service.json");
 
     /// <summary>
-    /// Where the map is listening, as the service itself last published it.
+    /// Returns the address the map last published, or null when there is none.
     ///
-    /// The service works out which addresses its bind address actually answers on
-    /// — `0.0.0.0` is not something anyone can type into a browser — and writes
-    /// them down in the order worth offering, so the first is the answer.
+    /// The service resolves its bind address into the addresses it actually
+    /// answers on, since a bind address such as `0.0.0.0` is not reachable, and
+    /// writes them in preference order. This returns the first.
     /// </summary>
     public static string? Address()
     {
@@ -220,13 +191,11 @@ public static class Settings
     }
 
     /// <summary>
-    /// Makes sure there is a settings file, by asking the service to write one.
-    /// Gives back where it is, or null when it could not be written.
+    /// Creates the settings file if it is missing, by running the service with
+    /// `--save-config`. Returns its path, or null when it could not be written.
     ///
-    /// Written by the service and not here: the format is the service's, and a
-    /// second program writing a format it does not own is how the two come to
-    /// disagree about it. The data path is passed in because that is the one thing
-    /// the service cannot work out for itself.
+    /// The service writes the file because the service owns the format. The data
+    /// path is passed in because the service cannot work it out for itself.
     /// </summary>
     public static string? EnsureWritten(ICoreServerAPI api, string executable)
     {
@@ -282,144 +251,127 @@ public static class Settings
         }
     }
 
-    /// <summary>Long enough for a cold start on a slow disk to write one file.</summary>
+    /// <summary>How long to wait for the service to write the file, in milliseconds.
+    /// Long enough for a cold start on a slow disk.</summary>
     private const int WriteConfigMs = 15000;
 
     /// <summary>
-    /// One setting's value, by name, or null where the file does not say.
+    /// Returns one setting's value by name, or null when the file does not set it.
     ///
-    /// The one place that knows how a line is shaped. A setting inside a table is
-    /// asked for by its whole name — `commands.export` — which is how it is
-    /// written in every other language that reads this format.
+    /// Name a setting inside a table by its whole name, such as `commands.export`.
+    /// Walks <see cref="Lines"/>.
     /// </summary>
     public static string? Value(string key)
     {
-        try
+        // The whole key, not a prefix of one: a setting named `announce_url`
+        // must not answer for `announce`.
+        foreach (var (table, name, said) in Settings.Lines())
         {
-            // What the last table header renamed everything under it to. Without
-            // this a setting inside a table answers for a top-level setting of
-            // the same name, and the file now has both kinds.
-            var table = "";
-
-            foreach (var line in File.ReadLines(Path))
+            if (name is not null && (table + name).Equals(key, StringComparison.Ordinal))
             {
-                var text = line.Trim();
-                if (text.StartsWith('#'))
-                {
-                    continue;
-                }
-
-                if (text.StartsWith('[') && text.EndsWith(']'))
-                {
-                    table = text[1..^1].Trim() + ".";
-                    continue;
-                }
-
-                var at = text.IndexOf('=');
-                if (at < 0)
-                {
-                    continue;
-                }
-
-                // The whole key, not a prefix of one: a setting named
-                // `announce_url` must not answer for `announce`.
-                if ((table + text[..at].Trim()).Equals(key, StringComparison.Ordinal))
-                {
-                    return Said(text[(at + 1)..]);
-                }
+                return said;
             }
-        }
-        catch (Exception)
-        {
-            // Unreadable settings are the service's to complain about, not a
-            // reason for this half to change what it does.
         }
 
         return null;
     }
 
     /// <summary>
-    /// Whether the file has this table at all, however empty it is.
+    /// Returns true when the file has this table header, even with no settings
+    /// under it. Walks <see cref="Lines"/>.
     ///
-    /// The difference matters wherever an absent table means the defaults: a
-    /// settings file written before a table existed says nothing about it and
-    /// should behave as the defaults do, while a table somebody has emptied on
-    /// purpose is them saying they want none of it. Asked apart from reading it,
-    /// because "nothing in it" is the same answer to both and the wrong one to
-    /// one of them.
+    /// An absent table means the defaults, and an empty table means the operator
+    /// wants none of it. <see cref="Table"/> returns nothing in both cases, so
+    /// callers that need to tell them apart ask this first.
     /// </summary>
     public static bool HasTable(string table)
     {
-        try
+        var wanted = table + ".";
+        foreach (var (named, _, _) in Settings.Lines())
         {
-            foreach (var line in File.ReadLines(Path))
+            if (named.Equals(wanted, StringComparison.Ordinal))
             {
-                var text = line.Trim();
-                if (text.StartsWith('[') && text.EndsWith(']')
-                    && text[1..^1].Trim().Equals(table, StringComparison.Ordinal))
-                {
-                    return true;
-                }
+                return true;
             }
-        }
-        catch (Exception)
-        {
-            // Unreadable settings are the service's to complain about.
         }
 
         return false;
     }
 
     /// <summary>
-    /// Every setting inside one table, in the order the file gives them.
+    /// Returns every setting inside one table, in the order the file gives them.
+    /// Walks <see cref="Lines"/>.
     ///
-    /// The reader above answers one question by name, which is the whole of what
-    /// a setting with a known name needs. A table whose keys are the operator's
-    /// own — the bars a player's card carries — cannot be asked that way: what
-    /// is wanted is everything in it, and the order they were written in, since
-    /// that is the order they will be drawn in.
+    /// <see cref="Value"/> serves settings with known names. This serves a table
+    /// whose keys the operator chooses, such as the bars a player's card carries,
+    /// where the file order is the draw order.
     /// </summary>
     public static IEnumerable<(string Key, string Said)> Table(string table)
     {
+        var wanted = table + ".";
         var found = new List<(string, string)>();
-        try
+        foreach (var (named, name, said) in Settings.Lines())
         {
-            var inside = false;
-            foreach (var line in File.ReadLines(Path))
+            if (name is not null && named.Equals(wanted, StringComparison.Ordinal))
             {
-                var text = line.Trim();
-                if (text.StartsWith('#'))
-                {
-                    continue;
-                }
-
-                if (text.StartsWith('[') && text.EndsWith(']'))
-                {
-                    inside = text[1..^1].Trim().Equals(table, StringComparison.Ordinal);
-                    continue;
-                }
-
-                var at = text.IndexOf('=');
-                if (inside && at > 0)
-                {
-                    found.Add((text[..at].Trim(), Said(text[(at + 1)..])));
-                }
+                found.Add((name, said!));
             }
-        }
-        catch (Exception)
-        {
-            // Unreadable settings are the service's to complain about.
         }
 
         return found;
     }
 
     /// <summary>
-    /// What is on the right of the equals sign.
+    /// Yields every meaningful line of the settings file, in order. The one place
+    /// that knows how a line is shaped, and the walker behind
+    /// <see cref="Value"/>, <see cref="HasTable"/> and <see cref="Table"/>.
     ///
-    /// A quoted value ends at its closing quote and an unquoted one ends at a
-    /// comment, so that `announce = false # off` is off rather than a value that
-    /// merely is not the word false.
+    /// Comment lines are skipped. Each result carries the table the line sits
+    /// under, written with its trailing dot so a key matches by its whole name. A
+    /// table header yields its own name with a null key. A setting yields its key
+    /// and value. An unreadable file yields nothing.
+    /// </summary>
+    private static IEnumerable<(string Table, string? Key, string? Said)> Lines()
+    {
+        List<string> read;
+        try
+        {
+            read = new List<string>(File.ReadLines(Path));
+        }
+        catch (Exception)
+        {
+            yield break;
+        }
+
+        var table = "";
+        foreach (var line in read)
+        {
+            var text = line.Trim();
+            if (text.StartsWith('#'))
+            {
+                continue;
+            }
+
+            if (text.StartsWith('[') && text.EndsWith(']'))
+            {
+                table = text[1..^1].Trim() + ".";
+                yield return (table, null, null);
+                continue;
+            }
+
+            var at = text.IndexOf('=');
+            if (at > 0)
+            {
+                yield return (table, text[..at].Trim(), Said(text[(at + 1)..]));
+            }
+        }
+    }
+
+    /// <summary>
+    /// Returns the value on the right of an equals sign.
+    ///
+    /// A quoted value ends at its closing quote. An unquoted one ends at a
+    /// comment, so `announce = false # off` reads as `false`.
     /// </summary>
     private static string Said(string after)
     {
@@ -435,26 +387,30 @@ public static class Settings
     }
 
     /// <summary>
-    /// A yes-or-no setting, and what an absent one means.
+    /// Returns a numeric setting, or <paramref name="byDefault"/> when the file
+    /// does not set it or the value is not a number.
     ///
-    /// The default is given at the call rather than baked in here, because these
-    /// do not all lean the same way: a map runs and announces itself unless told
-    /// not to, and shares nobody's markers unless told to. One reader that
-    /// silently assumed the first would have made the third quietly wrong.
+    /// A value that is not a number falls back to the default rather than zero,
+    /// so a typo does not read as a request for the fastest possible interval.
     /// </summary>
-    /// <summary>
-    /// A setting that is a number, and what an absent or unreadable one means.
-    ///
-    /// Anything that is not a number at all is the default rather than a zero: a
-    /// typo in a settings file must not be read as the operator asking for the
-    /// fastest possible beat.
-    /// </summary>
+    /// <param name="key">The setting's whole name.</param>
+    /// <param name="byDefault">The value to use when the file does not say.</param>
     private static int Number(string key, int byDefault)
     {
         var said = Value(key);
         return int.TryParse(said?.Trim(), out var number) ? number : byDefault;
     }
 
+    /// <summary>
+    /// Returns a true-or-false setting, or <paramref name="byDefault"/> when the
+    /// file does not set it.
+    ///
+    /// Each caller passes its own default, because these settings do not all lean
+    /// the same way. A map announces itself unless told not to, and shares no
+    /// markers unless told to.
+    /// </summary>
+    /// <param name="key">The setting's whole name.</param>
+    /// <param name="byDefault">The value to use when the file does not say.</param>
     private static bool On(string key, bool byDefault)
     {
         var said = Value(key);

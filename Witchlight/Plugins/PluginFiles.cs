@@ -7,44 +7,41 @@ using Vintagestory.API.Common;
 namespace Witchlight;
 
 /// <summary>
-/// Getting a plugin's own files out of its mod and beside the map.
+/// Copies a plugin's own files out of its mod and into the map's directory.
 ///
-/// A plugin is one thing to install. Somebody drops a mod in their Mods folder
-/// and that is the whole of it — they do not also unpack a second archive into
-/// the map's directory, and they do not have to know that directory exists.
-/// What the map serves is copied out of the mod itself, here, the first time it
-/// registers and again whenever the mod is newer than what was copied.
+/// A plugin is one thing to install. Somebody drops a mod in their Mods folder,
+/// and this copies what the map serves out of the mod the first time the plugin
+/// registers and again whenever the mod is newer than what was copied. Nobody
+/// unpacks a second archive, and nobody needs to know the map's directory exists.
 ///
-/// The same shape <see cref="BundledService"/> already uses to get the map
-/// service out of Witchlight's own mod, and for the same two reasons: a mod
-/// loaded from a folder is how it is developed and one loaded from an archive is
-/// how it is installed, and both have to work; and comparing timestamps is what
+/// <see cref="BundledService"/> uses the same shape for the map service, for the
+/// same two reasons. A mod loads from a folder while it is developed and from an
+/// archive once it is installed, and both have to work. Comparing timestamps
 /// keeps an unchanged plugin from being unpacked on every start.
 ///
-/// A plugin keeps them in a `plugin/` directory inside its mod, and the contents
-/// of that directory become the plugin's own directory beside the map. What is
-/// copied out of it is the plugin's `viewer.js`, whatever it keeps in `scripts/`,
-/// and whatever it ships in `assets/`. Nothing else — a mod carries its own DLL
-/// and its own metadata, and neither of those is the map's business.
+/// A plugin keeps these files in a `plugin/` directory inside its mod, and that
+/// directory's contents become the plugin's directory beside the map. This copies
+/// the plugin's `viewer.js`, whatever it keeps in `scripts/`, and whatever it
+/// ships in `assets/`. It copies nothing else, since a mod's DLL and metadata are
+/// not the map's business.
 ///
-/// The directory it lands in is named for the id the plugin REGISTERED with, not
-/// for its modid: that id is what the service keys its store, its routes and its
-/// sharing by, so a directory named anything else would be a directory nothing
-/// reads. A plugin is free to use its modid as its id, and one that does has one
-/// name rather than two to keep in step.
+/// The directory is named for the id the plugin registered with, not for its
+/// modid. The service keys its store, its routes and its sharing by that id, so a
+/// directory named anything else would be a directory nothing reads. A plugin may
+/// register its modid as its id and then have one name to keep in step.
 /// </summary>
 internal static class PluginFiles
 {
-    /// <summary>Where a plugin keeps what the map serves, inside its mod.</summary>
+    /// <summary>The directory inside a plugin's mod that holds what the map serves.</summary>
     private const string From = "plugin";
 
     /// <summary>
     /// Copies one plugin's files out of its mod and into the map's directory.
+    /// Returns what went wrong, or null when nothing did.
     ///
-    /// Answers what went wrong, or null where nothing did. A plugin whose files
-    /// cannot be copied still registers and still keeps rows — it simply draws
-    /// nothing, which is a thing worth saying in the log rather than a reason to
-    /// stop a server starting.
+    /// A plugin whose files cannot be copied still registers and still keeps rows.
+    /// It draws nothing, which belongs in the log rather than stopping a server
+    /// from starting.
     /// </summary>
     internal static string? Install(Mod mod, string id, string exports, ILogger log)
     {
@@ -69,11 +66,12 @@ internal static class PluginFiles
     }
 
     /// <summary>
-    /// A mod loaded from a folder, which is how it is developed.
+    /// Copies the files of a mod loaded from a folder, which is how it is
+    /// developed.
     ///
-    /// Copied file by file and only where the source is newer, so a plugin being
-    /// worked on updates the moment the server restarts without rewriting
-    /// everything it ships each time.
+    /// Copies file by file and only where the source is newer, so a plugin being
+    /// worked on updates on the next server restart without rewriting everything
+    /// it ships.
     /// </summary>
     private static string? FromFolder(string from, string into, ILogger log, string id)
     {
@@ -109,12 +107,12 @@ internal static class PluginFiles
     }
 
     /// <summary>
-    /// A mod loaded from an archive, which is how it is installed.
+    /// Unpacks the files of a mod loaded from an archive, which is how it is
+    /// installed.
     ///
-    /// The archive's own timestamp decides whether anything is unpacked at all:
-    /// one file's date is enough to say "this is the same mod as last start",
-    /// and unpacking a plugin's whole asset directory on every start is work
-    /// nobody asked for.
+    /// The archive's own timestamp decides whether anything is unpacked at all.
+    /// One file's date settles whether this is the same mod as last start, and
+    /// saves unpacking a plugin's whole asset directory every time.
     /// </summary>
     private static string? FromArchive(string archive, string into, ILogger log, string id)
     {
@@ -131,8 +129,8 @@ internal static class PluginFiles
 
         foreach (var entry in zip.Entries)
         {
-            // A directory entry has no name of its own, and nothing outside the
-            // plugin's own directory in the archive is ours to unpack.
+            // Skip directory entries, which have no name of their own, and
+            // anything outside the plugin's directory in the archive.
             if (entry.Name.Length == 0 || !entry.FullName.StartsWith(prefix, StringComparison.Ordinal))
             {
                 continue;
@@ -159,16 +157,13 @@ internal static class PluginFiles
     }
 
     /// <summary>
-    /// Whether one file inside a plugin's mod is one the map serves.
+    /// Returns true when one file inside a plugin's mod is one the map serves.
     ///
-    /// The entry point, whatever the plugin is written across, and what it ships
-    /// for the page to show. Named rather than "everything under here", because
-    /// what this writes lands in a directory the map serves out of and a rule
-    /// that copied whatever it found would serve whatever a mod happened to
-    /// carry.
+    /// Names the files it accepts rather than accepting everything under the
+    /// directory. What this copies lands where the map serves from, so a rule
+    /// that took whatever it found would serve whatever a mod happened to carry.
     ///
-    /// Rejects any path that climbs, which is the one thing an archive can say
-    /// that a folder cannot: a zip entry is a string, and a string may be
+    /// Rejects any path that climbs. A zip entry is a string, and a string may be
     /// `../../map.sqlite`.
     /// </summary>
     private static bool Wanted(string relative)

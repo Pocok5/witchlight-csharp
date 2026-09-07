@@ -15,36 +15,34 @@ public class LiveWaypoint
     public int X { get; set; }
     public int Y { get; set; }
     public int Z { get; set; }
-    /// <summary>Display name of the owner, empty when it cannot be resolved.</summary>
+    /// <summary>The owner's display name, empty when it cannot be resolved.</summary>
     public string Owner { get; set; } = "";
 
     /// <summary>
-    /// The owning player's uid, exactly as the waypoint stores it. This is the
-    /// identity that survives a rename and the one any sharing rule will key on,
-    /// so it travels even when the name does not.
+    /// The owner's uid, exactly as the waypoint stores it. It survives a rename and
+    /// every sharing rule keys on it, so it travels even when the name does not.
     /// </summary>
     public string OwnerUid { get; set; } = "";
 
     /// <summary>
-    /// The block this marker was put on — <c>game:rock-granite</c> — or empty
-    /// where the mod has no record of it, which is every marker made before it
-    /// kept one. What a preset made from this marker is keyed on. See
+    /// The block this marker was put on, such as <c>game:rock-granite</c>, or empty
+    /// when the mod has no record of it. Every marker made before the mod kept the
+    /// answer has none. A preset made from this marker is keyed on it. See
     /// <see cref="Origins"/>.
     /// </summary>
     public string Block { get; set; } = "";
 
     /// <summary>
-    /// What names this marker wherever it goes. A browser that asked for one
-    /// watches for this to appear, and it is the waypoint's own guid, so the
-    /// marker it gets back is the marker it asked for and not one that merely
-    /// looks like it.
+    /// The waypoint's own guid, which names this marker wherever it goes. A browser
+    /// that asked for a marker watches for this to appear, so what it gets back is
+    /// the marker it asked for rather than one that looks like it.
     /// </summary>
     public string Key { get; set; } = "";
 
     /// <summary>
-    /// Whether this marker is its owner's alone. The service uses it to decide
-    /// who is sent it; the page uses it to say so on the marker itself, because a
-    /// person who marked something private should be able to see that it took.
+    /// True when this marker is its owner's alone. The service decides who is sent
+    /// it from this, and the page shows it on the marker so a player who marked
+    /// something private can see that it took.
     /// </summary>
     public bool Private { get; set; }
 
@@ -53,44 +51,41 @@ public class LiveWaypoint
 /// <summary>
 /// Every marker, arranged by who may see it.
 ///
-/// The service does not read a waypoint and must not have to. Deciding who sees
-/// what needs the owner and the choice, and the half that knows both is this one,
-/// so the sorting happens here and the service is left holding two lists it only
-/// has to hand out: everybody's, and each person's own.
+/// Deciding who sees what needs the owner and their choice, and the mod knows both,
+/// so the sorting happens in the mod. The service holds two lists it only hands
+/// out: everybody's, and each player's own.
 /// </summary>
 public class LiveMarkers
 {
-    /// <summary>The colours the game offers, so the web form can offer the same.</summary>
+    /// <summary>The colours the game offers, so the web form offers the same.</summary>
     public List<string> Colors { get; set; } = new();
 
-    /// <summary>Markers anyone may see.</summary>
+    /// <summary>The markers anyone may see.</summary>
     public List<LiveWaypoint> Public { get; set; } = new();
 
-    /// <summary>Markers only their owner may see, by the uid of that owner.</summary>
+    /// <summary>The markers only their owner may see, by that owner's uid.</summary>
     public Dictionary<string, List<LiveWaypoint>> Private { get; set; } = new();
 
     /// <summary>
-    /// Which markers each person keeps in sight on their own map, by their uid.
+    /// Which markers each player keeps in sight on their own map, by uid.
     ///
-    /// Sorted by reader for the reason the private markers are: a pin is one
-    /// person's answer about one marker, and the service hands each of them their
-    /// own rather than being asked to work out whose is whose. See
-    /// <see cref="Pins"/>, which is the one place that knows.
+    /// Sorted by reader, as the private markers are, so the service hands each
+    /// player their own rather than working out whose is whose.
+    /// <see cref="Pins"/> is the one place that knows.
     /// </summary>
     public Dictionary<string, List<string>> Pins { get; set; } = new();
 }
 
 /// <summary>
-/// Every marker on the server, as the map service wants it.
+/// Builds the marker feed the map service reads.
 ///
-/// Waypoints live server-side in the world map manager, so every marker is
-/// readable from here. Which of them reach whom is decided here too: the service
-/// does not read a waypoint and must not have to, and the half that knows both
-/// the owner and their choice is this one.
+/// Waypoints live server-side in the world map manager, so this reads every
+/// marker. It also decides which of them reach whom, because the service does not
+/// read a waypoint and the mod knows both the owner and their choice.
 /// </summary>
 public static class MarkerFeed
 {
-    /// <summary>Every marker, sorted by who may see it, as the service wants it.</summary>
+    /// <summary>Serializes <see cref="Sorted"/> to the JSON the service reads.</summary>
     public static string Json(
         ICoreServerAPI api, Visibility visibility, Pins pins, Origins origins)
     {
@@ -99,20 +94,20 @@ public static class MarkerFeed
 
     /// <summary>
 
-    /// Every marker, arranged into what anyone may see and what only its owner may.
+    /// Builds the feed: every marker, split into what anyone may see and what only
+    /// its owner may.
     ///
-    /// The colour list rides along rather than going on a channel of its own. It
-    /// is a few hundred bytes against a payload of tens of kilobytes, it changes
-    /// only when the mod set does, and sending it with the markers means a service
-    /// that restarted has the palette back on the next post instead of needing to
-    /// be told separately that it lost it.
+    /// The colour list travels here rather than on a channel of its own. It is a
+    /// few hundred bytes against a payload of tens of kilobytes, it changes only
+    /// when the mod set does, and sending it with the markers gives a restarted
+    /// service the palette back on the next post.
     /// </summary>
     public static LiveMarkers Sorted(
         ICoreServerAPI api, Visibility visibility, Pins pins, Origins origins)
     {
-        // One snapshot of the list, taken the way `All` takes its own: the pins are
-        // read off the same waypoints the markers are, and a list being iterated
-        // while the game adds to it is the one thing that can go wrong here.
+        // Take one snapshot of the list, the way `All` does. The pins are read off
+        // the same waypoints the markers are, and iterating a list while the game
+        // adds to it is what can go wrong here.
         var alive = Markers.Layer(api)?.Waypoints?.ToList() ?? new List<Waypoint>();
         var sorted = new LiveMarkers
         {
@@ -127,9 +122,8 @@ public static class MarkerFeed
                 continue;
             }
 
-            // A private marker whose owner is nobody can be shown to nobody. It
-            // should not exist; dropping it is the only honest thing to do with
-            // one that does.
+            // A private marker with no owner can be shown to nobody. It should not
+            // exist, so drop it.
             if (marker.OwnerUid.Length == 0)
             {
                 continue;
@@ -148,9 +142,10 @@ public static class MarkerFeed
 
     /// <summary>
 
-    /// Every marker saved on the server. Public because `/witchlight status`
-    /// reports how many there are: an empty map with a working service is either
-    /// no markers or no post, and those need telling apart.
+    /// Returns every marker saved on the server. Public because `/witchlight
+    /// status` reports how many there are. An empty map with a working service
+    /// means either no markers or no post, and an operator needs to tell them
+    /// apart.
     /// </summary>
     public static List<LiveWaypoint> All(
         ICoreServerAPI api, Visibility visibility, Origins origins)
@@ -161,9 +156,8 @@ public static class MarkerFeed
             return new List<LiveWaypoint>();
         }
 
-        // Read each time rather than held, so an operator changing their mind
-        // takes effect on the next post instead of the next restart — the same
-        // rule the announcement and the in-game share both follow.
+        // Read the setting each post rather than caching it, so an operator's
+        // change takes effect on the next post instead of the next restart.
         var byDefault = Settings.MarkersPrivateByDefault;
 
         var waypoints = new List<LiveWaypoint>();

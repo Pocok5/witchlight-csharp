@@ -9,19 +9,19 @@ using Vintagestory.GameContent;
 namespace Witchlight;
 
 /// <summary>
-/// One shared marker, drawn on the map.
+/// Draws one shared marker on the in-game map.
 ///
-/// Drawn exactly as the game draws a waypoint — this is the game's own waypoint
-/// component, given a waypoint built from what the server said and the game's
-/// waypoint layer to borrow its pictures from — so a marker somebody else made
-/// looks like one of the player's own. What differs is what a click does: the
-/// game's component opens a window that names the waypoint by its place in the
-/// player's list, and this one has no such place, so a click opens this mod's
-/// window instead, which names it by key.
+/// Subclasses the game's own waypoint component and gives it a waypoint built
+/// from what the server said, plus the game's waypoint layer to borrow pictures
+/// from, so a marker somebody else made looks like one of the player's own.
+///
+/// Only the click differs. The game's component opens a window that names the
+/// waypoint by its place in the player's list, and a shared marker has no such
+/// place, so a click opens this mod's window, which names it by key.
 /// </summary>
 public sealed class SharedMarkerComponent : WaypointMapComponent
 {
-    /// <summary>How close a click has to land, in the game's own reach.</summary>
+    /// <summary>How close a click has to land, using the game's own reach.</summary>
     private const float ReachPx = 8f;
 
     private readonly WaypointMapLayer _game;
@@ -50,8 +50,8 @@ public sealed class SharedMarkerComponent : WaypointMapComponent
     }
 
     /// <summary>
-    /// The waypoint the game's drawing reads. Owned by nobody: it is never in
-    /// the game's list and nothing may mistake it for one that is.
+    /// The waypoint the game's drawing reads. It is never in the game's waypoint
+    /// list.
     /// </summary>
     private static Waypoint Drawn(SharedMarker marker) => new()
     {
@@ -65,8 +65,8 @@ public sealed class SharedMarkerComponent : WaypointMapComponent
     };
 
     /// <summary>
-    /// Whose marker this is, said on the marker itself — every death marker is
-    /// called "You died here", and on a shared map that needs a name against it.
+    /// The owner's name, shown on the marker. Every death marker is called "You
+    /// died here", which needs a name against it on a shared map.
     /// </summary>
     public static string Label(SharedMarker marker)
     {
@@ -75,10 +75,10 @@ public sealed class SharedMarkerComponent : WaypointMapComponent
     }
 
     /// <summary>
-    /// The game's drawing, once the game has the pictures to draw with. The
-    /// waypoint layer loads them when the map opens; before that there is
-    /// nothing to draw and the game's own drawing would fall over reaching for
-    /// them.
+    /// Draws the marker once the game has the pictures to draw with.
+    ///
+    /// The waypoint layer loads them when the map opens. Before that the game's
+    /// own drawing throws reaching for them, so this draws nothing.
     /// </summary>
     public override void Render(GuiElementMap map, float dt)
     {
@@ -90,9 +90,9 @@ public sealed class SharedMarkerComponent : WaypointMapComponent
     }
 
     /// <summary>
-    /// The game's own hover — it is what makes the marker swell under the
-    /// mouse — with the game's words swapped for this marker's. The game would
-    /// say "Waypoint 0", which is the place it has in nobody's list.
+    /// Runs the game's own hover, which makes the marker swell under the mouse,
+    /// with this marker's words in place of the game's. The game would say
+    /// "Waypoint 0", naming a place in a list this marker is not in.
     /// </summary>
     public override void OnMouseMove(MouseEvent args, GuiElementMap mapElem, StringBuilder hoverText)
     {
@@ -103,7 +103,7 @@ public sealed class SharedMarkerComponent : WaypointMapComponent
         }
     }
 
-    /// <summary>A right click on the marker opens this mod's window on it.</summary>
+    /// <summary>Opens this mod's window on the marker for a right click.</summary>
     public override void OnMouseUpOnElement(MouseEvent args, GuiElementMap mapElem)
     {
         if (args.Button != EnumMouseButton.Right || !Under(args, mapElem))
@@ -115,8 +115,8 @@ public sealed class SharedMarkerComponent : WaypointMapComponent
     }
 
     /// <summary>
-    /// Whether the mouse is on the marker: the game's own arithmetic, including
-    /// where a pinned one is held against the edge of the map.
+    /// Returns true when the mouse is on the marker. Uses the game's own
+    /// arithmetic, including where a pinned marker is held against the map's edge.
     /// </summary>
     private bool Under(MouseEvent args, GuiElementMap mapElem)
     {

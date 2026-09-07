@@ -8,46 +8,40 @@ using Vintagestory.API.Common;
 namespace Witchlight;
 
 /// <summary>
-/// Turning a texture into the one colour that stands for it.
+/// Turns a texture into the one colour that stands for it.
 ///
-/// Nothing here knows what a block is. It knows how to find the PNG behind an
-/// asset reference and how to average one, which is a question the palette asks
-/// of block textures, of overlay textures and of the textures a shape file names
-/// — three callers that were each spelling out the same four accumulator
-/// variables.
+/// Nothing here knows what a block is. It finds the PNG behind an asset
+/// reference and averages it. The palette asks this of block textures, of
+/// overlay textures, and of the textures a shape file names.
 /// </summary>
 public static class TextureColours
 {
     /// <summary>
-    /// A running average of pixels, weighted by alpha.
+    /// Accumulates a running average of pixels, weighted by alpha.
     ///
-    /// Weighted so that the transparent parts of a leaf or a grass tuft do not
-    /// wash it out: a fern is mostly nothing, and counting that nothing as black
-    /// gives every fern the colour of a shadow.
-    ///
-    /// A value that carries its own four numbers, rather than four locals passed
-    /// by reference to a function that adds to them. The old shape could not be
-    /// read without checking what each `ref double` was.
+    /// The weighting keeps the transparent parts of a leaf or a grass tuft from
+    /// washing the colour out. A fern is mostly nothing, and counting that
+    /// nothing as black gives every fern the colour of a shadow.
     /// </summary>
     public struct Average
     {
         private double _red, _green, _blue, _weight;
         private long _pixels;
 
-        /// <summary>Whether anything at all was opaque enough to count.</summary>
+        /// <summary>Reports whether anything was opaque enough to count.</summary>
         public readonly bool Any => _weight > 0;
 
         /// <summary>
-        /// How much of the square this actually covers, from 0 to 1.
+        /// Returns how much of the square this covers, from 0 to 1.
         ///
-        /// Kept because a colour on its own cannot say whether the texture it
-        /// came from is what somebody looking down at the block would see. A
-        /// branch texture and a leaf texture are both textures of a branchy
-        /// leaves block, and only one of them is the block.
+        /// A colour on its own cannot say whether the texture it came from is
+        /// what somebody looking down at the block would see. A branch texture
+        /// and a leaf texture both belong to a branchy leaves block, and only one
+        /// of them stands for the block.
         /// </summary>
         public readonly double Covers => _pixels == 0 ? 0 : _weight / _pixels;
 
-        /// <summary>Adds every pixel of one texture file.</summary>
+        /// <summary>Adds every pixel of one texture file to the average.</summary>
         public void Add(IAsset asset)
         {
             using var bitmap = SKBitmap.Decode(asset.Data);
@@ -77,7 +71,7 @@ public static class TextureColours
             }
         }
 
-        /// <summary>Adds every texture file behind one reference.</summary>
+        /// <summary>Adds every texture file behind one reference to the average.</summary>
         public void AddAll(ICoreAPI api, AssetLocation texture)
         {
             foreach (var asset in Resolve(api, texture))
@@ -86,7 +80,7 @@ public static class TextureColours
             }
         }
 
-        /// <summary>The average as CSS, or null where nothing was counted.</summary>
+        /// <summary>Returns the average as a CSS hex colour, or null where nothing was counted.</summary>
         public readonly string? Hex => _weight <= 0
             ? null
             : $"#{Round(_red):x2}{Round(_green):x2}{Round(_blue):x2}";
@@ -95,23 +89,22 @@ public static class TextureColours
     }
 
     /// <summary>
-    /// What one texture comes out as: its colour, and how much of the square it
-    /// covers.
-    ///
-    /// The two travel together because a caller choosing between a block's
-    /// textures needs both — see <see cref="Average.Covers"/>.
+    /// Carries what one texture comes out as: its colour, and how much of the
+    /// square it covers. A caller choosing between a block's textures needs both.
+    /// See <see cref="Average.Covers"/>.
     /// </summary>
     public readonly record struct Paint(string? Hex, double Covers)
     {
-        /// <summary>Nothing was opaque enough to count.</summary>
+        /// <summary>The result where nothing was opaque enough to count.</summary>
         public static readonly Paint None = new(null, 0);
     }
 
     /// <summary>
-    /// The average colour of one of a block's textures, with its overlays.
+    /// Returns the average colour of one of a block's textures, with its
+    /// overlays.
     ///
-    /// Textures are shared between block variants, so each is decoded once and
-    /// the answer kept for the rest of the build.
+    /// Block variants share textures, so each texture is decoded once and the
+    /// answer cached for the rest of the build.
     /// </summary>
     public static Paint Of(ICoreAPI api, CompositeTexture texture)
     {
@@ -127,7 +120,7 @@ public static class TextureColours
         return decoded;
     }
 
-    /// <summary>Keeps an answer against anything already worked out for it.</summary>
+    /// <summary>Returns the cached answer for a key, computing it once where there is none.</summary>
     public static Paint Once(string key, Func<Paint> work)
     {
         if (Cache.TryGetValue(key, out var cached))
@@ -140,7 +133,7 @@ public static class TextureColours
         return decoded;
     }
 
-    /// <summary>Starts a fresh build, keeping nothing from the last one.</summary>
+    /// <summary>Clears the cache so the next build starts fresh.</summary>
     public static void Forget() => Cache.Clear();
 
     private static readonly Dictionary<string, Paint> Cache = new();
@@ -148,8 +141,8 @@ public static class TextureColours
     private static Paint Decode(ICoreAPI api, CompositeTexture texture, List<AssetLocation> overlays)
     {
         // Grass-covered soil is a dirt texture with a grass overlay on top, and
-        // the overlay is the part anyone looking at a map cares about. Averaging
-        // the base alone turns every meadow into mud.
+        // the overlay is the part a map shows. Averaging the base alone turns
+        // every meadow into mud.
         var average = new Average();
         foreach (var overlay in overlays)
         {
@@ -174,20 +167,17 @@ public static class TextureColours
     }
 
     /// <summary>
-    /// Whether a texture reference is the game's stand-in for one it was never
-    /// given, rather than a texture in its own right.
+    /// Reports whether a texture reference is the game's stand-in for a texture
+    /// it was never given, rather than a texture in its own right.
     ///
-    /// `unknown.png` is the missing-texture checker: white, and opaque over the
-    /// whole square. Averaged as though it were a colour it is the loudest thing
-    /// wherever it appears — a full square of near-white beats any real texture
-    /// that covers less than all of one — so every block wearing it came out
-    /// `#fff9f9`, which is that file's own average and the one colour on the map
-    /// that is never anything but a mistake. Ruins, clutter, banners, pies and
-    /// fire all drew as white patches on ground that was the right colour.
+    /// `unknown.png` is the missing-texture checker, white and opaque over the
+    /// whole square. Averaged as a colour it beats any real texture that covers
+    /// less than the full square, so every block wearing it came out `#fff9f9`,
+    /// that file's own average. Ruins, clutter, banners, pies and fire all drew
+    /// as white patches on correctly coloured ground.
     ///
-    /// It is a placeholder for a texture, not a texture. A block left with none
-    /// after this is a block with nothing to draw, which is a thing the palette
-    /// already knows how to say.
+    /// A block left with no texture after this check has nothing to draw, which
+    /// the palette already records.
     /// </summary>
     public static bool Placeholder(string? path) =>
         path is not null
@@ -198,18 +188,17 @@ public static class TextureColours
     public static bool Placeholder(AssetLocation? texture) => Placeholder(texture?.Path);
 
     /// <summary>
-    /// The texture files behind one texture reference.
+    /// Returns the texture files behind one texture reference.
     ///
-    /// A block's texture may be a wildcard — `coral/shelf/blue*` — which the
+    /// A block's texture may be a wildcard such as `coral/shelf/blue*`, which the
     /// client expands at bake time into the set of alternates it picks from per
-    /// position. There is no atlas here to bake against, so the wildcard is
-    /// expanded the same way and every match contributes to the average, which is
-    /// the honest colour for a block that varies.
+    /// position. There is no atlas here to bake against, so this expands the
+    /// wildcard the same way and every match contributes to the average.
     /// </summary>
     public static IEnumerable<IAsset> Resolve(ICoreAPI api, AssetLocation texture)
     {
-        // Nothing, rather than the checker. Every route to a colour arrives here,
-        // so refusing it once is refusing it everywhere.
+        // Return nothing rather than the checker. Every route to a colour
+        // arrives here, so refusing it once refuses it everywhere.
         if (Placeholder(texture))
         {
             return Array.Empty<IAsset>();
@@ -222,11 +211,12 @@ public static class TextureColours
     }
 
     /// <summary>
-    /// Every asset one reference names, expanding a wildcard where there is one.
+    /// Returns every asset one reference names, expanding a wildcard where there
+    /// is one.
     ///
-    /// Ordered, so that a block whose texture varies gets the same average on
-    /// every machine and every run rather than whatever the filesystem listed
-    /// first.
+    /// The results are ordered, so a block whose texture varies gets the same
+    /// average on every machine and every run rather than whatever the filesystem
+    /// listed first.
     /// </summary>
     public static IEnumerable<AssetLocation> Matching(
         ICoreAPI api,

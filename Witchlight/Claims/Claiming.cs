@@ -10,45 +10,43 @@ namespace Witchlight;
 /// <summary>
 /// One land claim somebody drew on the web map.
 ///
-/// Two corners and a description, which is all a map looked at from above can
-/// honestly be asked for. The service has squared the rectangle up and taken the
-/// owner from the session; everything else about whether this claim may exist is
-/// decided here.
+/// Carries two corners and a description. The service squares the rectangle up
+/// and takes the owner from the session. <see cref="Claiming"/> decides
+/// everything else about whether the claim may exist.
 /// </summary>
 public class WantedClaim
 {
-    /// <summary>Who asked. The service took this from their session.</summary>
+    /// <summary>The uid of the player who asked, taken from their session.</summary>
     public string Uid { get; set; } = "";
 
     public string Description { get; set; } = "";
 
-    /// <summary>The corners, west and north first.</summary>
+    /// <summary>The horizontal corners, west and north first.</summary>
     public int X1 { get; set; }
     public int Z1 { get; set; }
     public int X2 { get; set; }
     public int Z2 { get; set; }
 
     /// <summary>
-    /// How far down it starts and how far up it reaches, lower first.
+    /// The lowest and highest block the claim reaches, lower first.
     ///
-    /// Asked for rather than assumed, though the map is drawn from above. Depth
-    /// is most of what a claim's volume is made of and volume is what a role's
-    /// allowance is measured in, so a map that made every claim the full height
-    /// of the world would hand a survival player a square thirty-two blocks
-    /// across and no way to say they wanted a wider, shallower one.
+    /// The form asks for these rather than assuming the full height of the world.
+    /// Depth accounts for most of a claim's volume and a role's allowance is
+    /// measured in volume, so a full-height claim would give a survival player a
+    /// square thirty-two blocks across with no way to trade depth for width.
     /// </summary>
     public int Y1 { get; set; }
     public int Y2 { get; set; }
 }
 
-/// <summary>Who a claim is being asked to let in.</summary>
+/// <summary>The players and permissions a claim is being asked to let in.</summary>
 public class WantedGuests
 {
-    /// <summary>The people named, by the name the game knows them as. Turned
-    ///  into uids here, because this is the half that can.</summary>
+    /// <summary>The players named, by the name the game knows them as. The mod
+    ///  turns these into uids, because the mod is the half that can.</summary>
     public List<string> Names { get; set; } = new();
 
-    /// <summary>The game's own two everybody-permissions.</summary>
+    /// <summary>The game's two permissions that apply to everybody.</summary>
     public bool EveryoneUses { get; set; }
     public bool EveryoneWalks { get; set; }
 }
@@ -57,17 +55,16 @@ public class WantedGuests
 /// A change to a claim that already exists: what it is called, and who it lets
 /// in.
 ///
-/// Not the ground. Moving a boundary has to be judged against everybody else's
-/// claims and against an allowance, and the map cannot show somebody what they
-/// would be giving up — so redrawing is making a new one, which the form already
-/// does.
+/// Does not change the ground. Moving a boundary has to be judged against every
+/// other claim and against an allowance, and the map cannot show a player what
+/// they would give up. A player who wants different ground draws a new claim.
 /// </summary>
 public class EditedClaim
 {
-    /// <summary>Which claim, by the name <see cref="ClaimFeed"/> gave it.</summary>
+    /// <summary>The claim to change, by the key <see cref="ClaimFeed"/> gave it.</summary>
     public string Key { get; set; } = "";
 
-    /// <summary>Who asked. The service took this from their session.</summary>
+    /// <summary>The uid of the player who asked, taken from their session.</summary>
     public string Uid { get; set; } = "";
 
     public string Description { get; set; } = "";
@@ -75,14 +72,14 @@ public class EditedClaim
     public WantedGuests Allowed { get; set; } = new();
 }
 
-/// <summary>One claim somebody asked to give up.</summary>
+/// <summary>One claim a player asked to give up.</summary>
 public class UnwantedClaim
 {
     public string Key { get; set; } = "";
     public string Uid { get; set; } = "";
 }
 
-/// <summary>Everything about claims the service was holding.</summary>
+/// <summary>The claim requests the service was holding, in one reply.</summary>
 public class AskedClaims
 {
     public List<WantedClaim> Make { get; set; } = new();
@@ -90,41 +87,37 @@ public class AskedClaims
     public List<UnwantedClaim> Remove { get; set; } = new();
 }
 
-/// <summary>How many claims of each kind landed.</summary>
+/// <summary>How many requests of each kind the mod applied.</summary>
 public readonly record struct Claimed(int Made, int Changed, int Removed)
 {
     public bool Anything => Made > 0 || Changed > 0 || Removed > 0;
 }
 
 /// <summary>
-/// Making the land claims somebody asked for on the web map.
+/// Makes, changes and releases the land claims players ask for on the web map.
 ///
-/// Every rule the game applies to `/land claim` is applied here, and none of them
-/// is applied anywhere else. That is the whole point of this file: a web map that
-/// could take land the game itself would refuse is a way round the server's own
-/// rules, and a second copy of those rules kept in the service would be a second
+/// Applies every rule the game applies to `/land claim`, and applies them only
+/// here. A web map that could take land the game would refuse is a way around the
+/// server's rules, and a copy of those rules in the service would be a second
 /// opinion on a question with one right answer.
 ///
-/// So this reads the game's own numbers — the world config, the privilege, the
-/// role's allowance and minimum size, how many claims the person already has, and
-/// every claim already on the map — and refuses in the same cases and for the same
-/// reasons. Nothing about the claim is decided here either: the rectangle and the
-/// depth both come from the form, because a claim's volume is mostly its depth and
-/// the person taking the land is the one who should be choosing it.
+/// Reads the game's own numbers: the world config, the privilege, the role's
+/// allowance and minimum size, how many claims the player already has, and every
+/// claim already on the map. Refuses in the same cases and for the same reasons.
+/// The rectangle and the depth both come from the form, since the player taking
+/// the land chooses how deep it goes.
 ///
-/// The map's own permission is asked as well, and never instead. `[claims] create`
-/// narrows who may take land through the map; it can only ever take away.
+/// Tests the map's `[claims] create` permission as well, never instead. It only
+/// narrows who may take land through the map.
 /// </summary>
 public static class Claiming
 {
     /// <summary>
-    /// Makes every claim in the service's reply that may be made, and says how
-    /// many landed.
+    /// Applies every request in the service's reply that may be applied, and
+    /// returns how many of each kind landed.
     ///
-    /// A claim that is refused is said out loud once, in the log, naming who and
-    /// why. Nothing is said back to the person: they are in a browser, and the
-    /// page they are looking at is already watching for the claim to appear —
-    /// see the viewer, which tells them where the answer is when it does not.
+    /// Logs each refusal once, naming who and why. Sends nothing back to the
+    /// player, who is in a browser watching the page for the claim to appear.
     /// </summary>
     public static Claimed Apply(ICoreServerAPI api, AskedClaims? asked)
     {
@@ -186,23 +179,20 @@ public static class Claiming
     }
 
     /// <summary>
-    /// Says why somebody was refused, once, in the server's log.
-    ///
-    /// Nothing is said back to them: they are in a browser, and the page they are
-    /// looking at is already watching for the claim to change. The server is
-    /// where an operator can see who was turned away and why.
+    /// Logs why one player was refused, so an operator can see who was turned
+    /// away and why.
     /// </summary>
     private static void Refused(ICoreServerAPI api, string uid, string doing, string why) =>
         api.Logger.Notification("[witchlight] {0} may not {1}: {2}", uid, doing, why);
 
     /// <summary>
-    /// Changes what a claim is called and who it lets in, or says why not.
+    /// Changes what a claim is called and who it lets in. Returns why not, or
+    /// null when the change was made.
     ///
-    /// The claim is put back rather than edited in place: the game indexes claims
-    /// by region and tells every client when one changes, and both of those
-    /// happen on `Remove` and `Add` — reaching into a live claim would change
-    /// what the server holds and tell nobody. That is what the game's own
-    /// `/land claim save` does with an edited copy.
+    /// Removes the claim and adds it back rather than editing it in place. The
+    /// game indexes claims by region and tells every client on `Remove` and
+    /// `Add`, so editing a live claim would change what the server holds and tell
+    /// nobody. The game's own `/land claim save` works the same way.
     /// </summary>
     private static string? Change(ICoreServerAPI api, EditedClaim edit)
     {
@@ -226,7 +216,7 @@ public static class Claiming
         return null;
     }
 
-    /// <summary>Gives a claim up, or says why it cannot be.</summary>
+    /// <summary>Releases a claim. Returns why not, or null when it was released.</summary>
     private static string? Give(ICoreServerAPI api, UnwantedClaim gone)
     {
         if (Held(api, gone.Key) is not { } claim)
@@ -242,44 +232,40 @@ public static class Claiming
     }
 
     /// <summary>
-    /// The claim the map is naming, or null where none answers to that name.
+    /// Returns the claim the map named, or null when no claim has that key.
     ///
-    /// A key is worked out from what a claim is, so one that matches nothing is
-    /// a claim that has moved since the page was last told about it. Refusing is
-    /// the only safe answer: the alternative is editing whichever claim now sits
+    /// A key is derived from the claim's ground, so a key that matches nothing
+    /// names a claim that has moved since the page was told about it. Returning
+    /// null refuses the change, rather than editing whichever claim now sits
     /// where the page thinks it is looking.
     /// </summary>
     private static LandClaim? Held(ICoreServerAPI api, string key) =>
         ClaimFeed.ByKey(api, key);
 
     /// <summary>
-    /// Whether this person may change or give up this claim.
+    /// Returns true when this player may change or release this claim.
     ///
-    /// Its owner, or somebody the game trusts with other people's things —
-    /// `commandplayer`, which is what vanilla's own `/land adminfree` asks of
-    /// whoever deletes a claim that is not theirs. The map asks the same thing
-    /// rather than a rule of its own.
+    /// Allows the owner, and anybody holding `commandplayer`, which is what
+    /// vanilla's `/land adminfree` requires to delete somebody else's claim. The
+    /// map applies the same test rather than a rule of its own.
     /// </summary>
     private static bool Owns(ICoreServerAPI api, LandClaim claim, string uid) =>
         claim.OwnedByPlayerUid == uid
         || (api.World.PlayerByUid(uid)?.HasPrivilege(Privilege.commandplayer) ?? false);
 
     /// <summary>
-    /// Writes the named people onto a claim, replacing whoever was on it.
+    /// Writes the named players onto a claim, replacing whoever was on it.
     ///
-    /// The whole list each time rather than a difference: the form holds all of
-    /// it and sends all of it, so working out what "changed" would mean against a
-    /// claim somebody else may have edited since is work with a wrong answer.
+    /// Takes the whole guest list each time rather than a difference. The form
+    /// holds the whole list and sends it, and diffing against a claim somebody
+    /// else may have edited since would give a wrong answer.
     ///
-    /// A name the server has never seen is dropped rather than refusing the
-    /// change. It is a typo in one row of a form, and losing the other rows to it
-    /// would be worse than the row quietly not appearing — the form shows what
-    /// came back, so a name that did not take is visible on the next post.
+    /// Drops a name the server has never seen rather than refusing the whole
+    /// change, so one typo does not lose the other rows. The form shows what came
+    /// back, so a name that did not take is visible on the next post.
     ///
-    /// What they are granted is use and traverse and building, which is what the
-    /// game's `/land claim grant ... all` gives. The map offers one kind of guest
-    /// rather than three, because three checkboxes per person is a permission
-    /// system and this is a map.
+    /// Grants use, traverse and building, which is what `/land claim grant ...
+    /// all` gives. The map offers one kind of guest rather than three.
     /// </summary>
     private static void Invite(ICoreServerAPI api, LandClaim claim, List<string> names)
     {
@@ -310,89 +296,68 @@ public static class Claiming
     }
 
     /// <summary>
-    /// Makes one claim, or says in one sentence why it cannot be made.
+    /// Makes one claim. Returns one sentence saying why it cannot be made, or
+    /// null when it was made.
     ///
-    /// Null is the claim having been made. The refusals are the game's own, in
-    /// the game's own order, so that a claim the map takes is a claim `/land
-    /// claim` would have taken from the same player standing in the same place.
+    /// Applies the game's refusals in the game's own order, so the map takes a
+    /// claim only where `/land claim` would have taken it from the same player.
     /// </summary>
     private static string? Make(ICoreServerAPI api, WantedClaim wanted)
     {
-        // The world's own switch, first, because a world with claiming turned off
-        // has no claims to be allowed or refused one of.
+        // The world's switch comes first. A world with claiming turned off has no
+        // claims to allow or refuse.
         if (!api.World.Config.GetBool("allowLandClaiming", true))
         {
             return "land claiming is off in this world's configuration";
         }
 
-        // The game's privilege and then the map's, in that order: the first is
-        // the server's rule and the second only narrows it. Refusing on the game's
-        // own first is what makes the message say the true reason.
+        // The game's privilege first, then the map's, which only narrows it.
+        // Refusing on the game's privilege first makes the message name the real
+        // reason.
         if (!Permissions.Holds(api, wanted.Uid, Permissions.ClaimsCreate))
         {
             return $"claiming land on the map is for {Permissions.Who(Permissions.ClaimsCreate)}";
         }
 
-        // Everything below needs the role's numbers, and a role is read off the
-        // player. Somebody who has never joined has none, which is the one case
-        // this cannot answer for at all.
-        var data = api.PlayerData?.GetPlayerDataByUid(wanted.Uid);
-        var role = data is null ? null : api.Permissions.GetRole(data.RoleCode);
-        if (data is null || role is null)
-        {
-            return "this server has no record of them, so it has no allowance to check";
-        }
-
-        // Read once and refused outright where there is none, rather than reached
-        // for twice. Asking `Claims?.All` and then adding through `Claims.Add` is
-        // two answers to whether this world has land claims at all, and the
-        // second of them would put a claim nowhere and report that it worked.
+        // Read the claim list once and refuse outright when there is none.
+        // Reading `Claims?.All` and then adding through `Claims.Add` asks twice
+        // whether this world has land claims, and the second call would put a
+        // claim nowhere and report success.
         if (api.World.Claims is not { } held)
         {
             return "this world has no land claims to add to";
         }
 
         var everyones = held.All ?? new List<LandClaim>();
-        var mine = everyones
-            .Where(claim => claim?.OwnedByPlayerUid == wanted.Uid)
-            .ToList();
+        var mine = Allowance.Owned(everyones, wanted.Uid);
 
-        if (mine.Count >= role.LandClaimMaxAreas + data.ExtraLandClaimAreas)
+        // The same numbers the web form was shown. A player who has never joined
+        // has no role, and so no allowance to check.
+        if (Allowance.For(api, wanted.Uid, mine) is not { } allowance)
         {
-            return $"they already have {mine.Count} claims, which is all their role allows";
+            return "this server has no record of them, so it has no allowance to check";
         }
 
-        // Inclusive of every corner: a rectangle drawn from one block to another
-        // covers both of them, which is what somebody dragging one out means, and
-        // a claim from y=60 to y=80 is meant to include the block at 80.
+        // Inclusive of every corner. A rectangle dragged from one block to
+        // another covers both, and a claim from y=60 to y=80 includes the block
+        // at 80.
         //
-        // Clamped to the world rather than refused for reaching past it. What
-        // arrives is two numbers somebody typed, and the useful answer to "from
-        // the bottom of the world" is the bottom of the world.
+        // Clamp to the world rather than refusing a box that reaches past it. The
+        // depths are two numbers a player typed, and "from the bottom of the
+        // world" should give the bottom of the world.
         var floor = Math.Clamp(Math.Min(wanted.Y1, wanted.Y2), 0, api.WorldManager.MapSizeY);
         var ceiling = Math.Clamp(Math.Max(wanted.Y1, wanted.Y2), 0, api.WorldManager.MapSizeY);
         var ground = new Cuboidi(
             wanted.X1, floor, wanted.Z1,
             wanted.X2 + 1, Math.Min(ceiling + 1, api.WorldManager.MapSizeY), wanted.Z2 + 1);
 
-        var least = role.LandClaimMinSize;
-        if (least is not null
-            && (ground.SizeX < least.X || ground.SizeY < least.Y || ground.SizeZ < least.Z))
+        if (allowance.Refuses(ground) is { } refusal)
         {
-            return $"{ground.SizeX}x{ground.SizeY}x{ground.SizeZ} is under the "
-                + $"{least.X}x{least.Y}x{least.Z} their role allows";
+            return refusal;
         }
 
-        var total = mine.Sum(claim => (long)claim.SizeXYZ) + ground.SizeXYZ;
-        var allowed = (long)role.LandClaimAllowance + data.ExtraLandClaimAllowance;
-        if (total > allowed)
-        {
-            return $"that would bring them to {total}m³, past the {allowed}m³ they are allowed";
-        }
-
-        // Everybody's claims, including their own. The game checks the whole list
-        // rather than other people's, because a claim overlapping one of your own
-        // is still two claims on one piece of ground.
+        // Test against every claim, including the player's own. Two of a player's
+        // own claims on one piece of ground is still an overlap.
         if (everyones.FirstOrDefault(claim => claim?.Intersects(ground) == true) is { } already)
         {
             var whose = string.IsNullOrEmpty(already.LastKnownOwnerName)
@@ -401,11 +366,16 @@ public static class Claiming
             return $"it overlaps {whose}";
         }
 
-        // `LastKnownOwnerName` is what the game writes on a claim and what every
-        // reader of one shows, so the claim is created from the name rather than
-        // from the uid and the uid is written on afterwards — which is what
-        // `CreateClaim` does for a player it is handed, and what nothing does for
-        // one it is not.
+        // `CreateClaim` takes the owner name and privilege level, so read them
+        // here and write the uid on afterwards. Every reader of a claim shows
+        // `LastKnownOwnerName`. The allowance carries size and count only.
+        var data = api.PlayerData?.GetPlayerDataByUid(wanted.Uid);
+        var role = data is null ? null : api.Permissions.GetRole(data.RoleCode);
+        if (data is null || role is null)
+        {
+            return "this server has no record of them, so it has no allowance to check";
+        }
+
         var claiming = LandClaim.CreateClaim(data.LastKnownPlayername ?? "", role.PrivilegeLevel);
         claiming.OwnedByPlayerUid = wanted.Uid;
         claiming.Description = wanted.Description ?? "";
@@ -418,9 +388,8 @@ public static class Claiming
                 : "it is not next to their other areas";
         }
 
-        // The game's own API, which indexes the claim by region, saves it with the
-        // world and tells every client. Nothing here writes any of that down: a
-        // second copy of where the claims are is a second thing to be wrong.
+        // The game's API indexes the claim by region, saves it with the world and
+        // tells every client. The mod keeps no copy of where the claims are.
         held.Add(claiming);
         return null;
     }

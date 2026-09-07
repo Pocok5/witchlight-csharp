@@ -17,12 +17,10 @@ public class LiveArea
     public int Z2 { get; set; }
 
     /// <summary>
-    /// How far up and down it reaches.
+    /// The lowest and highest block the claim reaches.
     ///
-    /// Carried even though the map is drawn from above, because a claim covering
-    /// three blocks of a cellar is not the same fact as one covering the sky over
-    /// it, and a reader who opens the boundary is asking exactly that. Nothing
-    /// draws with these; the popup says them.
+    /// Nothing draws with these. The popup displays them, so a reader can tell a
+    /// claim over three blocks of a cellar from one over the sky above it.
     /// </summary>
     public int Y1 { get; set; }
     public int Y2 { get; set; }
@@ -33,88 +31,81 @@ public class LiveGuest
 {
     public string Uid { get; set; } = "";
 
-    /// <summary>The name the game last knew them by, which is what a form shows
-    ///  and what somebody types to name them.</summary>
+    /// <summary>The name the game last knew them by. The form displays this name
+    ///  and a player types it to name them.</summary>
     public string Name { get; set; } = "";
 
-    /// <summary>Whether they may build and break, rather than only use and walk.
-    ///  The map offers the two the game's own `/land claim grant` offers, and
-    ///  this is which of them.</summary>
+    /// <summary>True when they may build and break. False when they may only use
+    ///  and walk. These are the two levels `/land claim grant` offers.</summary>
     public bool Builds { get; set; }
 }
 
 /// <summary>
 /// One land claim, as the map draws it.
 ///
-/// The areas rather than the claim's bounding box: a claim is built up out of
-/// adjacent rectangles and the shape they make is the shape of the boundary. A
-/// box drawn around the lot would put a fence round ground nobody has taken.
+/// Carries the claim's areas rather than its bounding box. A claim is built from
+/// adjacent rectangles, and their outline is the boundary. A box around the whole
+/// claim would draw a fence around ground nobody has taken.
 /// </summary>
 public class LiveClaim
 {
     /// <summary>
-    /// What names this claim wherever it goes.
+    /// The name that identifies this claim to the web map.
     ///
-    /// A land claim has no id of the game's own — nothing on it survives a
-    /// change and nothing is written down anywhere but the savegame — so this is
-    /// worked out from what the claim is: its owner and the ground it covers.
-    /// It is what a page names when it asks for one to be changed or given up,
-    /// which is the whole reason it exists: without it "this claim" is a thing
-    /// only a person looking at a screen can mean.
+    /// The game gives a land claim no id of its own, so <see cref="ClaimFeed"/>
+    /// derives this from the claim's owner and the ground it covers. A page sends
+    /// it back to name the claim it wants changed or given up.
     ///
-    /// That it changes when the ground does is a property and not a fault. A
-    /// page holding a key for a claim somebody has since redrawn is holding a
-    /// name for land that is no longer that shape, and the mod refusing it is
-    /// better than the mod editing whatever now sits there.
+    /// The key changes when the claim's ground changes. A page holding a key for
+    /// a claim somebody has since redrawn is refused, rather than editing
+    /// whatever now sits on that land.
     /// </summary>
     public string Key { get; set; } = "";
 
-    /// <summary>Whose it is, as the game last knew them by name.</summary>
+    /// <summary>The owner's name, as the game last knew it.</summary>
     public string Owner { get; set; } = "";
 
     /// <summary>
-    /// Whose it is, by the identity that survives a rename.
+    /// The owner's uid, which survives a rename.
     ///
-    /// What the page compares against whoever is looking, so that somebody who
-    /// has just drawn a claim can see their own appear.
+    /// The page compares it against the viewer, so a player who has just drawn a
+    /// claim sees their own appear.
     /// </summary>
     public string OwnerUid { get; set; } = "";
 
-    /// <summary>What its owner called it, or empty where they called it nothing.</summary>
+    /// <summary>The name the owner gave it, or empty when they gave it none.</summary>
     public string Description { get; set; } = "";
 
     /// <summary>The ground it covers, in one rectangle or several.</summary>
     public List<LiveArea> Areas { get; set; } = new();
 
-    /// <summary>Who it lets in beyond its owner.</summary>
+    /// <summary>The players it lets in beyond its owner.</summary>
     public List<LiveGuest> Guests { get; set; } = new();
 
-    /// <summary>Whether anybody at all may use what is on it, or walk across it.
-    ///  The game's own two, which are the only permissions it offers everybody
-    ///  rather than a named person.</summary>
+    /// <summary>True when anybody may use what is on the claim, and true when
+    ///  anybody may walk across it. These are the only two permissions the game
+    ///  grants to everybody rather than to a named player.</summary>
     public bool EveryoneUses { get; set; }
     public bool EveryoneWalks { get; set; }
 
-    /// <summary>How much land it takes, which is what an allowance is spent on.
-    ///  Worked out by the game from the areas, so it is read rather than
-    ///  recomputed — the map and the game must agree about what a claim costs.</summary>
+    /// <summary>The volume of land the claim takes, which is what an allowance is
+    ///  spent on. Read from the game rather than recomputed, so the map and the
+    ///  game agree about what a claim costs.</summary>
     public int Volume { get; set; }
 }
 
 /// <summary>
 /// What one person is allowed to claim, and what they have already used.
 ///
-/// Sent so the map's own form can say what a rectangle will cost before it is
-/// asked for. Without it the form is a shape somebody draws and a refusal they
-/// cannot predict: a survival player is allowed a quarter of a million cubic
-/// metres, and at the full height of the world that is a square thirty-two
-/// blocks across — which is a surprise worth having before the round trip rather
-/// than after it.
+/// Sent to the web map so its form can state what a rectangle costs before the
+/// player asks for it. A survival player is allowed a quarter of a million cubic
+/// metres, which at the full height of the world is a square thirty-two blocks
+/// across, so a form without these numbers gives a refusal the player could not
+/// predict.
 ///
-/// Only ever a smaller number than the truth. This is what the role and the
-/// player data said at the moment of the post, and the mod checks all of it again
-/// against the claim it is handed; a form that agrees is a form that saves a
-/// round trip, never one that grants anything.
+/// These are the numbers the role and the player data gave at the moment the feed
+/// was built. The mod checks all of them again against the claim it is handed, so
+/// the form saves a round trip and never grants anything.
 /// </summary>
 public class ClaimAllowance
 {
@@ -124,7 +115,7 @@ public class ClaimAllowance
     /// <summary>Cubic metres their existing claims already come to.</summary>
     public long Used { get; set; }
 
-    /// <summary>How many separate claims they may have, and have.</summary>
+    /// <summary>How many separate claims their role allows, and how many they hold.</summary>
     public int MaxAreas { get; set; }
     public int Areas { get; set; }
 
@@ -132,91 +123,112 @@ public class ClaimAllowance
     public int LeastX { get; set; }
     public int LeastY { get; set; }
     public int LeastZ { get; set; }
+
+    /// <summary>
+    /// Returns why this ground may not be claimed, or null when it may.
+    ///
+    /// Tests the three refusals in the order a player meets them: too many
+    /// claims, too small, then past the volume they are allowed. The player is
+    /// shown this wording, so each message names the number that stopped them.
+    /// </summary>
+    /// <param name="ground">The box the player wants to claim.</param>
+    public string? Refuses(Cuboidi ground)
+    {
+        if (Areas >= MaxAreas)
+        {
+            return $"they already have {Areas} claims, which is all their role allows";
+        }
+
+        if (ground.SizeX < LeastX || ground.SizeY < LeastY || ground.SizeZ < LeastZ)
+        {
+            return $"{ground.SizeX}x{ground.SizeY}x{ground.SizeZ} is under the "
+                + $"{LeastX}x{LeastY}x{LeastZ} their role allows";
+        }
+
+        var total = Used + ground.SizeXYZ;
+        if (total > Allowance)
+        {
+            return $"that would bring them to {total}m³, past the {Allowance}m³ they are allowed";
+        }
+
+        return null;
+    }
 }
 
 /// <summary>
-/// Every land claim, and who may be told about them.
+/// Every land claim, with the uids of the players who may be told about them.
 ///
-/// Not the shape the markers travel in, and the difference is the question. A
-/// marker is private to whoever made it, so who may see one is answered per
-/// marker; a claim is either the server's business or it is not, and who may see
-/// them is answered per person, by a privilege. So the claims travel once with
-/// the names of everyone entitled to them beside — which on a server with fifty
-/// players and a hundred claims is one list rather than fifty copies of one.
+/// A privilege decides who may see claims, so the answer is one list of players
+/// rather than a per-claim answer. The claims travel once with that list beside
+/// them. Markers travel in a different shape because a marker is private to
+/// whoever made it.
 /// </summary>
 public class LiveClaims
 {
     /// <summary>
-    /// Whether the claims are everybody's, which is what the setting says on a
-    /// server that has not narrowed it.
+    /// True when anybody may see the claims, signed in or not.
     ///
-    /// Read off the privilege rather than assumed: `[claims] view = "player"` is
-    /// the one answer that holds for a reader the mod has never heard of, and
-    /// anything narrower has to be decided per person.
+    /// Set from the `[claims] view` privilege. Only the widest setting holds for
+    /// a reader the mod has never heard of. Anything narrower is decided per
+    /// person and listed in <see cref="Seen"/>.
     /// </summary>
     public bool Everyones { get; set; }
 
     /// <summary>
-    /// How tall this world is.
+    /// How tall this world is, in blocks.
     ///
-    /// A fact about the world rather than about the claims, and it travels with
-    /// them because it is the one thing the form needs that a map drawn from
-    /// above cannot show: how deep a claim goes is what its volume is mostly made
-    /// of, and this is what "the whole height of it" means here.
+    /// Travels with the claims because the form needs it and a map drawn from
+    /// above cannot show it. A claim's depth accounts for most of its volume, and
+    /// this is the height a full-height claim takes.
     /// </summary>
     public int Height { get; set; }
 
     /// <summary>The claims themselves.</summary>
     public List<LiveClaim> Claims { get; set; } = new();
 
-    /// <summary>Who may be shown them, beyond that, by uid.</summary>
+    /// <summary>The uids of players who may be shown the claims. Empty when
+    ///  <see cref="Everyones"/> is true.</summary>
     public List<string> Seen { get; set; } = new();
 
     /// <summary>
-    /// Who may draw a new one, and what each of them is allowed, by uid.
+    /// The players who may draw a new claim, and what each is allowed, by uid.
     ///
-    /// A separate answer from <see cref="Seen"/>, because they are separate
-    /// questions: a server can show every boundary to everybody and still let
-    /// nobody but its landholders draw one.
+    /// Separate from <see cref="Seen"/>, because a server can show every boundary
+    /// to everybody and still let only its landholders draw one.
     ///
-    /// What each is allowed rides along rather than going on a channel of its
-    /// own, for the reason the marker colours ride with the markers: it is a few
-    /// dozen bytes per person who may claim at all, it changes when their role or
-    /// their claims do, and sending it here means a form always has it.
+    /// The allowance travels here rather than on a channel of its own. It is a
+    /// few dozen bytes per player, it changes when their role or their claims
+    /// change, and sending it here means the form always has it.
     /// </summary>
     public Dictionary<string, ClaimAllowance> Making { get; set; } = new();
 }
 
 /// <summary>
-/// Every land claim on the server, as the map service wants it.
+/// Builds the land claim feed the map service reads.
 ///
-/// Claims live in the world manager, so all of them are readable from here. Who
-/// may be told about them is decided here too, for the reason the markers and the
-/// player positions are: the service does not know what a privilege is and must
-/// not have to, and this is the half that does.
+/// The world manager holds every claim, so this reads them all. It also decides
+/// who may be told about them, because the service does not know what a privilege
+/// is and the mod does. The markers and the player positions work the same way.
 ///
-/// Whom to decide it for is the question this shape answers. A privilege can only
-/// be tested against somebody the server knows, and the people looking at the web
-/// map are not all standing in the world — so it is asked about everybody the
-/// server has ever had player data for rather than about everybody online, and
-/// <see cref="Permissions.Holds(ICoreServerAPI, string, string)"/> is what makes
-/// that possible.
+/// A privilege can only be tested against a player the server knows, and not
+/// every web map reader is standing in the world. So the question is asked about
+/// everybody the server has player data for rather than about everybody online.
+/// <see cref="Permissions.Holds(ICoreServerAPI, string, string)"/> answers it.
 /// </summary>
 public static class ClaimFeed
 {
-    /// <summary>Every claim, with who may see them, as the service wants it.</summary>
+    /// <summary>Serializes <see cref="Sorted"/> to the JSON the service reads.</summary>
     public static string Json(ICoreServerAPI api) => JsonConvert.SerializeObject(Sorted(api));
 
     /// <summary>
-    /// The claim answering to one of these names, or null where none does.
+    /// Returns the claim with this key, or null when none has it.
     ///
-    /// Walked rather than kept in a dictionary: a server has tens of claims, this
-    /// is asked only when somebody presses something in a browser, and an index
-    /// held beside the game's own list is a second copy of where the land is —
-    /// which is the thing this file exists not to keep.
+    /// Walks the claim list rather than holding an index. A server has tens of
+    /// claims and this runs only when somebody presses something in a browser, so
+    /// an index would be a second copy of where the land is.
     ///
-    /// The key is worked out the same way it is written, by the same function, so
-    /// the two cannot disagree about what a claim is called.
+    /// Recomputes the key with <see cref="Key"/>, the same function that wrote
+    /// it, so the two cannot disagree about what a claim is called.
     /// </summary>
     public static LandClaim? ByKey(ICoreServerAPI api, string key)
     {
@@ -239,7 +251,7 @@ public static class ClaimFeed
         return null;
     }
 
-    /// <summary>The ground one claim covers, seen from above.</summary>
+    /// <summary>Returns the rectangles one claim covers, seen from above.</summary>
     private static List<LiveArea> Rectangles(LandClaim claim) =>
         claim.Areas
             .Where(area => area is not null)
@@ -254,31 +266,28 @@ public static class ClaimFeed
             })
             .ToList();
 
-    /// <summary>How many there are on the server, for `witchlight status`.</summary>
+    /// <summary>Returns how many claims the server holds, for `witchlight status`.</summary>
     public static int Count(ICoreServerAPI api) => api.World.Claims?.All?.Count ?? 0;
 
     /// <summary>
-    /// Whether one claim belongs to a player rather than to the world.
+    /// Returns true when a claim belongs to a player rather than to the world.
     ///
-    /// The world writes a name on the perimeters it rules round trader camps and
-    /// story structures — "Trader" — and writes no uid, because there is nobody
-    /// to write. That absence is the whole of the difference and the only part of
-    /// it worth trusting: a name is a string worldgen chose and any mod may
-    /// choose the same one, while an owner is a player the server knows.
+    /// Tests the owner uid, not the owner name. Worldgen writes a name such as
+    /// "Trader" on the perimeters it rules around trader camps and story
+    /// structures, but writes no uid. A name is a string any mod can also choose,
+    /// while an owner uid is a player the server knows.
     ///
-    /// Asked in one place because two would be two answers. Who may draw a claim
-    /// is decided from the same fact — a claim nobody owns counts against
-    /// nobody's allowance — so this is what both sides read.
+    /// Both the drawing side and the allowance side read this one test. A claim
+    /// nobody owns counts against nobody's allowance.
     /// </summary>
     private static bool Owned(LandClaim claim) => !string.IsNullOrEmpty(claim.OwnedByPlayerUid);
 
     /// <summary>
-    /// How many of them the map draws, for `witchlight status`.
+    /// Returns how many claims the map draws, for `witchlight status`.
     ///
-    /// Said beside the count on the server because the two differ, and the
-    /// difference is the one an operator will want explaining: a map showing
-    /// fewer claims than the server has is <see cref="Settings.ClaimsWorldgen"/>
-    /// being off, not a claim gone missing.
+    /// Reported beside <see cref="Count"/> so an operator can see why the two
+    /// differ. A map drawing fewer claims than the server holds means
+    /// <see cref="Settings.ClaimsWorldgen"/> is off, not that a claim is missing.
     /// </summary>
     public static int Drawn(ICoreServerAPI api)
     {
@@ -299,12 +308,12 @@ public static class ClaimFeed
     }
 
     /// <summary>
-    /// Every claim, and the two lists of who may do what with them.
+    /// Builds the feed: every claim, plus the two lists of who may do what with
+    /// them.
     ///
-    /// Where seeing them is open to any player there is nothing to work out and
-    /// <see cref="LiveClaims.Everyones"/> says so; the service then sends them to
-    /// anybody, signed in or not, which is what the game already does. Where it is
-    /// not, each person the server knows is asked about in turn.
+    /// When any player may see the claims, sets <see cref="LiveClaims.Everyones"/>
+    /// and leaves <see cref="LiveClaims.Seen"/> empty, and the service then sends
+    /// them to anybody. Otherwise tests each player the server knows in turn.
     /// </summary>
     public static LiveClaims Sorted(ICoreServerAPI api)
     {
@@ -317,15 +326,14 @@ public static class ClaimFeed
             Everyones = Permissions.For(Permissions.ClaimsView) == Privilege.chat,
         };
 
-        // A world with claiming switched off has nobody who may draw one,
-        // whatever any role says. Asked once rather than per person: it is a fact
-        // about the world, and the mod refuses on it first for the same reason.
+        // A world with claiming switched off has nobody who may draw a claim,
+        // whatever any role says. Read once, because it is a fact about the
+        // world.
         var claiming = api.World.Config.GetBool("allowLandClaiming", true);
 
-        // Whose claims are whose, worked out once. Asked per person instead, this
-        // walks every claim on the server for every player it has ever had —
-        // which on a settled server is a square of two numbers that both only
-        // grow, on the game thread, every share interval.
+        // Group the claims by owner once. Asking per person would walk every
+        // claim on the server for every player it has ever had, on the game
+        // thread, every share interval.
         var byOwner = new Dictionary<string, List<LandClaim>>(StringComparer.Ordinal);
         foreach (var claim in api.World.Claims?.All ?? new List<LandClaim>())
         {
@@ -360,48 +368,29 @@ public static class ClaimFeed
     }
 
     /// <summary>
-    /// What one person may claim, or null where the server has no record to say.
+    /// Returns what one person may claim, or null when the server has no record
+    /// of them.
     ///
-    /// The allowance is the role's plus whatever an operator granted them by
-    /// hand, which is exactly the sum `/land claim add` checks against — read
-    /// here rather than restated, so the number the form shows and the number the
-    /// game enforces cannot be two numbers.
+    /// Defers to <see cref="Allowance.For"/>, which <see cref="Claiming"/> also
+    /// refuses against, so the form shows the number the mod enforces.
     /// </summary>
     private static ClaimAllowance? Allowed(
         ICoreServerAPI api, string uid, Dictionary<string, List<LandClaim>> byOwner)
     {
-        var data = api.PlayerData?.GetPlayerDataByUid(uid);
-        var role = data is null ? null : api.Permissions.GetRole(data.RoleCode);
-        if (data is null || role is null)
-        {
-            return null;
-        }
-
         var mine = byOwner.TryGetValue(uid, out var theirs) ? theirs : new List<LandClaim>();
-        var least = role.LandClaimMinSize ?? new Vec3i(1, 1, 1);
-        return new ClaimAllowance
-        {
-            Allowance = (long)role.LandClaimAllowance + data.ExtraLandClaimAllowance,
-            Used = mine.Sum(claim => (long)claim.SizeXYZ),
-            MaxAreas = role.LandClaimMaxAreas + data.ExtraLandClaimAreas,
-            Areas = mine.Count,
-            LeastX = least.X,
-            LeastY = least.Y,
-            LeastZ = least.Z,
-        };
+        return Allowance.For(api, uid, mine);
     }
 
     /// <summary>
-    /// Everybody this server could be asked about, by uid.
+    /// Returns the uid of everybody this server could be asked about.
     ///
-    /// The stored player data rather than who is online: somebody reading the map
-    /// may have signed in from a browser and not joined today, and a permission
-    /// that also meant "and be online" would take the map away from them the
-    /// moment they logged out of the game.
+    /// Reads the stored player data rather than the online players. Somebody
+    /// reading the map may have signed in from a browser without joining the
+    /// game, and testing a privilege against only online players would take the
+    /// map away from them the moment they logged out.
     ///
-    /// Online players are folded in because a first join writes player data at a
-    /// moment of the server's choosing, and somebody in the world who is not yet
-    /// in that table would be nobody for as long as that took.
+    /// Folds in the online players as well, because the server writes player data
+    /// for a first join at a moment of its own choosing.
     /// </summary>
     private static IEnumerable<string> Known(ICoreServerAPI api)
     {
@@ -421,12 +410,12 @@ public static class ClaimFeed
     }
 
     /// <summary>
-    /// Who one claim lets in, as the map shows them.
+    /// Returns the players one claim lets in, one row each.
     ///
-    /// The game keeps three dictionaries keyed on uid — what each person may do,
-    /// and what they were last called — and a form needs one row per person. The
-    /// name is what somebody reads and types; the uid is what survives a rename
-    /// and what the claim actually stores.
+    /// The game keeps the access flags and the last known names in separate
+    /// dictionaries keyed on uid. The form needs one row per player. A player
+    /// reads and types the name, while the uid survives a rename and is what the
+    /// claim stores.
     /// </summary>
     private static List<LiveGuest> Guests(LandClaim claim)
     {
@@ -449,46 +438,33 @@ public static class ClaimFeed
     }
 
     /// <summary>
-    /// A name for a claim, made out of what the claim is.
+    /// Returns a name for a claim, hashed from its owner and every corner.
     ///
-    /// The game gives a claim nothing to be known by, so this is the owner and
-    /// every corner run through a hash. Two properties are what it is for: the
-    /// same claim gives the same name for as long as nobody moves it, which is
-    /// what lets a page name one it is looking at; and a claim whose ground has
-    /// changed gives a different one, so a page holding a stale key is refused
-    /// rather than quietly editing land it was not looking at.
+    /// The game gives a claim nothing to be known by. This gives the same name
+    /// for as long as nobody moves the claim, which lets a page name the claim it
+    /// is looking at, and a different name once the ground changes, so a page
+    /// holding a stale key is refused rather than editing land it was not
+    /// looking at.
     ///
-    /// Not a secret and not a checksum. FNV-1a because it is four lines and
-    /// spreads well enough that two claims on one server will not collide.
+    /// Hashes with <see cref="Fnv1a"/>, which spreads well enough that two claims
+    /// on one server will not collide.
     /// </summary>
     private static string Key(LandClaim claim, List<LiveArea> areas)
     {
-        var hash = 0xcbf29ce484222325UL;
-        void Eat(string text)
-        {
-            foreach (var letter in text)
-            {
-                hash ^= letter;
-                hash *= 0x100000001b3UL;
-            }
-        }
-
-        Eat(claim.OwnedByPlayerUid ?? "");
-        foreach (var area in areas)
-        {
-            Eat($"|{area.X1},{area.Y1},{area.Z1},{area.X2},{area.Y2},{area.Z2}");
-        }
-        return hash.ToString("x16");
+        var parts = new List<string> { claim.OwnedByPlayerUid ?? "" };
+        parts.AddRange(areas.Select(area =>
+            $"|{area.X1},{area.Y1},{area.Z1},{area.X2},{area.Y2},{area.Z2}"));
+        return Fnv1a.Of(parts.ToArray());
     }
 
     /// <summary>
-    /// Every claim the map is willing to draw.
+    /// Returns every claim the map is willing to draw.
     ///
-    /// Everything a player owns, and — only where the settings ask for it — the
-    /// perimeters the world rules round its own trader camps and story
-    /// structures. Those are left out here rather than left to the page, because
-    /// a claim that reached a browser is a claim anybody may read out of it; see
-    /// <see cref="Settings.ClaimsWorldgen"/> for why they start hidden.
+    /// Includes every claim a player owns. Includes the perimeters the world
+    /// rules around trader camps and story structures only when
+    /// <see cref="Settings.ClaimsWorldgen"/> is on. Filters them out here rather
+    /// than in the page, because a claim that reached a browser can be read out
+    /// of it.
     /// </summary>
     public static List<LiveClaim> All(ICoreServerAPI api)
     {

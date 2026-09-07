@@ -23,17 +23,17 @@ namespace Witchlight;
 /// asking a client for a portrait or the marker pictures are anybody's.
 ///
 /// Each gate decides who may start a request and nothing about whom it may be
-/// sent to. The server asks whichever client can answer — see
-/// <see cref="PaletteExchange.AskAround"/> — and what a client sends back is
-/// taken on the same terms whoever asked for it: only an admin's palette or icon
-/// may replace one already chosen, and anybody else's fills gaps. See
+/// sent to. The server asks whichever client can answer. See
+/// <see cref="PaletteExchange.AskAround"/>. What a client sends back is taken on
+/// the same terms whoever asked for it: only an admin's palette or icon may
+/// replace one already chosen, and anybody else's fills gaps. See
 /// <see cref="PaletteExchange.Accept"/> and <see cref="IconExchange.Accept"/>.
 ///
-/// Not everything gated is a command. The web map asks two questions of its own —
-/// may this person see where the land claims are, and may they draw one — and
-/// those are the same question in a different table, so they are answered here
-/// rather than by a second class that would have its own idea of what a typo in a
-/// privilege name means. What differs between a gate and a gate is the key it is
+/// Not everything gated is a command. The web map asks two questions of its own:
+/// may this person see where the land claims are, and may they draw one. Those
+/// are the same question in a different table, so they are answered here rather
+/// than by a second class with its own idea of what a typo in a privilege name
+/// means. What differs between a gate and a gate is the key it is
 /// written under in the settings and what it falls back to, which is what
 /// <see cref="Gate"/> holds.
 /// </summary>
@@ -101,9 +101,8 @@ public static class Permissions
 
         // What the game asks of `/land claim`, and for the same reason. The map
         // must not be a way round a rule the server already has, so this starts
-        // as that rule rather than as a looser one — and it is checked in
-        // addition to the game's own, never instead of it. See
-        // <see cref="Claiming.Apply"/>.
+        // as that rule rather than a looser one. It is checked in addition to the
+        // game's own, never instead of it. See <see cref="Claiming.Apply"/>.
         [ClaimsCreate] = new(ClaimsCreate, Privilege.claimland),
     };
 
@@ -155,11 +154,11 @@ public static class Permissions
     /// code differ.
     ///
     /// The game calls the privilege to claim land <c>claimland</c> and gives it
-    /// the code <c>areamodify</c>; the settings file names it the way the game
-    /// does, and the file used to be refused for it — which shut claiming to
-    /// everybody but admins on every server that never touched the setting.
-    /// Read off the game's own table rather than written here, so a privilege
-    /// it renames tomorrow is still understood.
+    /// the code <c>areamodify</c>. The settings file names it the way the game
+    /// does, so both spellings must resolve. Refusing the named form shuts
+    /// claiming to everybody but admins on every server that never touched the
+    /// setting. The table is read off the game rather than written here, so a
+    /// privilege it renames is still understood.
     /// </summary>
     private static Dictionary<string, string> Named()
     {
@@ -212,10 +211,10 @@ public static class Permissions
     /// The web map asks about people who are not standing in the world: whoever
     /// is looking at it may have signed in from a browser and never joined today,
     /// and refusing them for that would make a permission mean "and be online".
-    /// So the game's own answer is used where there is an online player to ask,
-    /// and where there is not, the same three things the game reads are read off
-    /// the stored player data instead — a denial, a permanent grant, and the role
-    /// they are in.
+    /// So the game's own answer is used where there is an online player to ask.
+    /// Where there is not, the same three things the game reads are read off the
+    /// stored player data instead: a denial, a permanent grant, and the role they
+    /// are in.
     ///
     /// A uid the server has never seen is nobody, and nobody may. That is a
     /// player who has never joined this server, which is exactly the case where
@@ -257,10 +256,10 @@ public static class Permissions
     /// <summary>
     /// Who may do what, one line per table, for `witchlight status`.
     ///
-    /// Grouped by privilege rather than listed per gate, because an operator
-    /// reading this wants the shape of the answer — which of these are locked and
-    /// which are not — and eight lines saying `controlserver` five times is a
-    /// worse picture of it than one.
+    /// Grouped by privilege rather than listed per gate. An operator reading this
+    /// wants the shape of the answer, which of these are locked and which are not,
+    /// and eight lines saying `controlserver` five times is a worse picture of it
+    /// than one.
     ///
     /// A line per table rather than one over the lot. Which file a reader has to
     /// open to change something is the point of the line, and a single line
@@ -282,8 +281,8 @@ public static class Permissions
     /// One table's gates, grouped by who holds them.
     ///
     /// The name a reader sees is the settings key without its table, since the
-    /// line already says which table that is — `commands: an admin may export`
-    /// rather than the same with `commands.` in front of every word.
+    /// line already says which table that is. It reads `commands: an admin may
+    /// export` rather than the same with `commands.` before every word.
     /// </summary>
     private static string Line(string table, IEnumerable<string> names)
     {

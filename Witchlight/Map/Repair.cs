@@ -5,85 +5,69 @@ using Vintagestory.API.Server;
 namespace Witchlight;
 
 /// <summary>
-/// Filling the chunk-shaped holes a map is left with.
+/// Reloads chunk columns the map wants to read but whose blocks have left memory.
 ///
 /// A map chunk outlives the blocks under it, so a column marked dirty and reached
-/// after its blocks have gone cannot be read. Nothing brings one back on its own:
-/// the server loads a column when somebody walks to it, and a column at the
-/// trailing edge of a path nobody retraces is never loaded again — so it stays a
-/// single chunk of nothing in the middle of finished terrain, permanently.
+/// after its blocks have gone cannot be read. Nothing brings one back on its own.
+/// The server loads a column when somebody walks to it, and a column at the
+/// trailing edge of a path nobody retraces stays a single chunk of nothing in the
+/// middle of finished terrain.
 ///
-/// So the server is asked for it. That much was true before this was a class of
-/// its own; what was not was the timing. Asking at the head of an export and
-/// reading on the next one loses a race the map cannot win: an untouched column
-/// is aged out of memory in under ten seconds and the export beat is ten, so the
-/// column arrived, sat there, and was gone again before anything looked at it.
-/// The count of columns owed a read stood still for hours while every beat
-/// faithfully asked for them.
+/// This class asks the server for the column and reads it when the game reports
+/// it has arrived, about a second later. Reading on the next export beat instead
+/// loses a race: an untouched column ages out of memory in under ten seconds and
+/// the export beat is ten seconds, so the column arrived, sat there and was gone
+/// again before anything looked at it. The count of columns owed a read then
+/// stood still for hours.
 ///
-/// So a column is read when the game says it has arrived rather than on the next
-/// beat, which is a second later instead of ten.
+/// The scope here is one column the map had and lost. Deciding what ground the
+/// map has never drawn belongs to the map service, over the channel `ModApi`
+/// answers. See `ModApi.cs` and the service's own `pull.rs`.
 ///
-/// This used to be how the map grew into ground nobody had walked back over as
-/// well: a savegame-wide backfill fed it columns to fetch and write. That
-/// decision now lives in the map service, over the channel `ModApi` answers —
-/// see `ModApi.cs` and the service's own `pull.rs` — because deciding what
-/// ground the map does not have yet needs the whole map in hand to answer well,
-/// and the service already holds it. What is left here is narrower: healing a
-/// column the map already had and lost, nothing about ground it never drew.
+/// The other way a column reads as unreadable is a sentinel in the rain
+/// heightmap, which made the export believe blocks had gone when they had not.
+/// See <see cref="ColumnPump"/>. The export line names which of the two cases a
+/// column fell into.
 ///
-/// Most of what this was built to fix turned out not to be that either. The
-/// holes in the middle of a map were columns whose blocks had never left memory at all: a
-/// sentinel in the rain heightmap made the export believe they had, permanently —
-/// see <see cref="ColumnPump"/>. What is left here is the real, ordinary case a
-/// column can still fall into, which is small and slow-moving, and the export line
-/// now says which of the two ways a column was unreadable so that the next person
-/// reading it is not sent the way this one was.
-///
-/// Everything here happens on the server's main thread: the export drives the
-/// asking from a tick listener, and the game runs a load's callback as a main
-/// thread task. Nothing is guarded, because there is nothing to guard it from —
-/// unlike <see cref="DirtyColumns"/>, which the server's own chunk events reach
-/// from wherever it raises them.
+/// Everything here runs on the server's main thread. The export drives the asking
+/// from a tick listener and the game runs a load's callback as a main thread
+/// task, so nothing here takes a lock. <see cref="DirtyColumns"/> does, because
+/// the server's chunk events reach it from wherever it raises them.
 /// </summary>
 public sealed class Repair
 {
     private readonly ICoreServerAPI _api;
 
     /// <summary>
-    /// What to do with the ground once it is there: mark it changed and write it.
+    /// Marks the ground changed and writes it, once it is loaded.
     ///
-    /// Handed in rather than reached for, so that this knows how to get a column
-    /// back and nothing about what a map is. It is the shape <see cref="Seeding"/>
-    /// already uses, and for the same reason — the exporter owns the writing, and
-    /// two classes calling into each other is one dependency too many.
+    /// The exporter passes this in, so this class knows how to get a column back
+    /// and nothing about what a map is. <see cref="Seeding"/> takes the same
+    /// shape.
     /// </summary>
     private readonly Action<IReadOnlyCollection<(int, int)>> _read;
 
     /// <summary>
-    /// The columns the map wants and cannot read, in order.
+    /// Holds the columns the map wants and cannot read, in order.
     ///
-    /// Walked from where the last pass stopped, because only a few are asked for
-    /// at a time and a long list has to be reached the end of rather than the same
-    /// short prefix of it asked for forever. A list rather than a set because it
-    /// holds only what failed, which is tens of columns and not thousands, and one
-    /// structure that is both the membership and the order is one that cannot
-    /// disagree with itself.
+    /// Each pass resumes where the last stopped, because only a few are asked for
+    /// at a time and the whole list must be reached rather than the same short
+    /// prefix forever. A list rather than a set: it holds only what failed, which
+    /// is tens of columns, and one structure carries both membership and order.
     /// </summary>
     private readonly List<(int, int)> _owed = new();
 
-    /// <summary>Where the last pass over <see cref="_owed"/> stopped.</summary>
+    /// <summary>Marks where the last pass over <see cref="_owed"/> stopped.</summary>
     private int _asked;
 
     /// <summary>
-    /// Columns the server has handed back and that have not been read yet.
-    ///
-    /// A set, because a column asked for twice before either answer arrives is
+    /// Holds columns the server has handed back that have not been read yet. A
+    /// set, because a column asked for twice before either answer arrives is
     /// still one column to read.
     /// </summary>
     private readonly HashSet<(int, int)> _landed = new();
 
-    /// <summary>Whether a read of what has landed is already coming.</summary>
+    /// <summary>Tracks whether a read of what has landed is already scheduled.</summary>
     private bool _reading;
 
     public Repair(ICoreServerAPI api, Action<IReadOnlyCollection<(int, int)>> read)
@@ -92,16 +76,15 @@ public sealed class Repair
         _read = read;
     }
 
-    /// <summary>How many columns the map wants and cannot read yet.</summary>
+    /// <summary>Returns how many columns the map wants and cannot read yet.</summary>
     public int Owed => _owed.Count;
 
     /// <summary>
     /// Notes columns that left memory before they could be read.
     ///
-    /// A column leaves this list when it reaches disk and not before, because
-    /// until then it is still owed. Asking for one that is already on the list
-    /// costs nothing and changes nothing, which is what makes an export free to
-    /// say so on every beat that fails to read it.
+    /// A column leaves this list when it reaches disk and not before. Owing a
+    /// column already on the list changes nothing, so an export can report one on
+    /// every beat that fails to read it.
     /// </summary>
     public void Owe(IEnumerable<(int, int)> columns)
     {
@@ -115,8 +98,8 @@ public sealed class Repair
     }
 
     /// <summary>
-    /// Notes columns that have reached disk, which is the one thing that settles
-    /// a column that was owed a read.
+    /// Notes columns that have reached disk. Reaching disk is what settles a
+    /// column that was owed a read.
     /// </summary>
     public void Settled(IEnumerable<(int, int)> columns)
     {
@@ -137,21 +120,21 @@ public sealed class Repair
     }
 
     /// <summary>
-    /// Asks the server to load some of the columns the map is owed, and says how
+    /// Asks the server to load some of the columns the map is owed. Returns how
     /// many it asked for.
     ///
-    /// Each is asked for with a callback of its own, which is what makes the
-    /// reading find anything: the game says when the ground is there, and a read
-    /// a second later is well inside the life of a column nobody is standing near,
-    /// where a read on the next export beat is not — the beat is ten seconds and
-    /// an untouched column is aged out in under that.
+    /// Each column carries a callback of its own, so the read happens about a
+    /// second after the game reports the ground is there. That is well inside the
+    /// life of a column nobody is standing near. A read on the next export beat
+    /// is not, because the beat is ten seconds and an untouched column ages out in
+    /// under that.
     ///
-    /// Nothing is asked for twice in a row — the list is walked from where the
-    /// last pass stopped.
+    /// The list is walked from where the last pass stopped, so nothing is asked
+    /// for twice in a row.
     ///
-    /// A few at a time on the beat, and as many as an operator's patience on the
-    /// command, because a chunk load is real work for the server and healing the
-    /// map is not worth a stutter that everybody feels.
+    /// The beat asks for a few at a time and the command asks for more. A chunk
+    /// load is real work for the server, and healing the map must not cost a
+    /// stutter everybody feels.
     /// </summary>
     public int Ask(int most)
     {
@@ -170,11 +153,12 @@ public sealed class Repair
     }
 
     /// <summary>
-    /// One column has arrived, and the read of everything that has is arranged.
+    /// Records that one column has arrived and schedules a read of everything
+    /// that has arrived.
     ///
-    /// Not read here. A handful are asked for together and their callbacks land in
-    /// the same tick or the next few, and a read apiece would be a full export
-    /// apiece — so the first one to land books the read and the rest join it.
+    /// A handful of columns are asked for together and their callbacks land
+    /// within a few ticks. A read apiece would cost a full export apiece, so the
+    /// first column to land schedules the read and the rest join it.
     /// </summary>
     private void Landed((int, int) column)
     {
@@ -188,7 +172,7 @@ public sealed class Repair
         _api.Event.RegisterCallback(_ => ReadWhatLanded(), SettleMs);
     }
 
-    /// <summary>Reads the ground that has arrived, and lets go of it.</summary>
+    /// <summary>Reads the ground that has arrived and clears the landed set.</summary>
     private void ReadWhatLanded()
     {
         _reading = false;
@@ -203,49 +187,45 @@ public sealed class Repair
     }
 
     /// <summary>
-    /// How long the read waits after the first column of a batch lands.
+    /// Sets how long the read waits after the first column of a batch lands.
     ///
-    /// Long enough for the rest of the batch to arrive behind it, and short enough
-    /// that the first one is still in memory when the last one gets there — an
-    /// untouched column is aged out in something under ten seconds, and this is
-    /// one.
+    /// One second is long enough for the rest of the batch to arrive and short
+    /// enough that the first column is still in memory when the last one gets
+    /// there. An untouched column ages out in under ten seconds.
     /// </summary>
     private const int SettleMs = 1000;
 
     /// <summary>
-    /// How many columns the server may be asked to load at once.
+    /// Sets how many columns the server may be asked to load at once.
     ///
-    /// Each is a short blocking load on the server's chunk thread, so this is how
-    /// long that thread may be held in one go. Four is a fraction of the thirty
-    /// columns it generates per tick of its own accord — and asking for more than
-    /// a handful at a time is not merely slower: the server puts a request on a
-    /// queue its chunk thread drains, and a queue overrun clears itself out from
-    /// under that thread and takes the server down with it. <see cref="Seeding"/>
-    /// found that number the hard way and this is the same one, said once.
+    /// Each column is a short blocking load on the server's chunk thread, so this
+    /// bounds how long that thread is held in one go. Four is a fraction of the
+    /// thirty columns it generates per tick on its own. Asking for more than a
+    /// handful risks more than slowness: the server queues the requests for its
+    /// chunk thread, and a queue overrun clears itself out from under that thread
+    /// and takes the server down. <see cref="Seeding"/> uses the same number.
     /// </summary>
     public const int PerStep = 4;
 
     /// <summary>
-    /// How often that may be done.
+    /// Sets how often columns may be asked for. The gap leaves the chunk thread
+    /// free for the players whose own chunks are queued behind these.
     ///
-    /// The gap is the point: it is what leaves the chunk thread free for the
-    /// players whose own chunks are queued behind these.
-    ///
-    /// On a clock of its own rather than on the export beat. Getting a column back
-    /// and writing what it says are different jobs at different speeds, and tying
-    /// them together meant a map rebuilding itself did so at whatever rate an
-    /// operator had chosen to write the disk at — sixty-five minutes for a map
-    /// that this fills in seven.
+    /// This runs on a clock of its own rather than on the export beat. Getting a
+    /// column back and writing what it says are different jobs at different
+    /// speeds. Tying them together made a map rebuild at whatever rate the
+    /// operator had chosen to write the disk, which took sixty-five minutes for a
+    /// map this fills in seven.
     /// </summary>
     public const int StepIntervalMs = 250;
 
     /// <summary>
-    /// And how many a forced export asks for, which is an operator waiting for an
-    /// answer and willing to pay for it.
+    /// Sets how many columns a forced export asks for. An operator running the
+    /// command is waiting for an answer, so the number is larger than the beat's.
     ///
-    /// Bounded all the same. A map that has lost thousands of columns is a bug to
-    /// fix rather than a queue to flood, and the next command asks for the next
-    /// few hundred.
+    /// It stays bounded. A map that has lost thousands of columns is a bug to fix
+    /// rather than a queue to flood, and the next command asks for the next few
+    /// hundred.
     /// </summary>
     public const int PerCommand = 256;
 }

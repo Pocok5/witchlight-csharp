@@ -9,71 +9,68 @@ using Vintagestory.API.Datastructures;
 namespace Witchlight;
 
 /// <summary>
-/// The extra readings a player's card carries, beside their health and food.
+/// Reads the extra bars a player's card carries beside their health and food.
 ///
-/// A mod that gives players a resource — mana, stamina, a level — keeps it on
-/// the player's own entity, in the same watched attributes the game keeps health
-/// and hunger in. That is server-side and already in front of this mod, so
-/// showing one on the map costs a lookup rather than a dependency: nothing here
-/// references any mod, compiles against one, or breaks when one is uninstalled.
+/// A mod that gives players a resource such as mana, stamina or a level keeps it
+/// on the player's entity, in the same watched attributes the game keeps health
+/// and hunger in. Those are server-side and already in front of this mod, so
+/// showing one costs a lookup rather than a dependency. Nothing here references
+/// any mod, compiles against one, or breaks when one is uninstalled.
 ///
-/// What is read is the operator's to say, because guessing would be the one way
-/// to get it wrong. Each entry names the attribute holding the value, the one
-/// holding its maximum, and what colour to draw it — see `[bars]` in
-/// `witchlight.conf`, which ships with what a stock Rustbound Magic uses.
+/// The operator names which attributes to read, because guessing would get it
+/// wrong. Each entry names the attribute holding the value, the one holding its
+/// maximum, and what colour to draw it. See `[bars]` in `witchlight.conf`, which
+/// ships with what a stock Rustbound Magic uses.
 ///
-/// **A bar is drawn only for a player who has one.** An attribute that is not
-/// there, or whose maximum is zero, is a player this does not apply to: somebody
-/// who has not taken up magic, a server without the mod, an entry naming
-/// something nothing on this server keeps. No bar is the honest picture of every
-/// one of those, and it is what makes naming an attribute cost nothing.
+/// **A bar is drawn only for a player who has one.** An attribute that is absent,
+/// or whose maximum is zero, means the bar does not apply to that player. That
+/// covers somebody who has not taken up magic, a server without the mod, and an
+/// entry naming something nothing on this server keeps, and it is what makes
+/// naming an attribute cost nothing.
 /// </summary>
 public sealed record PlayerBar(string Name, string Value, string Max, string Colour, string Group)
 {
-    /// <summary>How many bars one card may carry, past which it is a chart.</summary>
+    /// <summary>The most bars one card may carry.</summary>
     private const int MostBars = 6;
 
-    /// <summary>What separates the four parts of one entry.</summary>
+    /// <summary>The character that separates the four parts of one entry.</summary>
     private const char Between = '|';
 
     /// <summary>
-    /// What the settings ask for, read once.
+    /// The bars the settings ask for, read once and cached.
     ///
-    /// Held rather than re-read, because this is asked of every player on every
-    /// live post — twice a second on a busy server — and the answer changes only
-    /// when somebody edits the file.
+    /// Cached because every live post reads it for every player, twice a second on
+    /// a busy server, and the answer changes only when somebody edits the file.
     /// </summary>
     private static IReadOnlyList<PlayerBar>? _wanted;
 
     /// <summary>
-    /// The bars this server has been asked to show.
-    ///
-    /// The api is wanted only to name the mod behind an attribute, and only for
-    /// an entry that did not name one itself — so a caller without one gets the
-    /// bars and no groups rather than nothing.
+    /// Returns the bars this server has been asked to show.
     /// </summary>
+    /// <param name="api">
+    /// Used only to name the mod behind an attribute, and only for an entry that
+    /// did not name one itself. A caller that passes null gets the bars with no
+    /// groups.
+    /// </param>
     public static IReadOnlyList<PlayerBar> Settled(ICoreAPI? api) => _wanted ??= Read(api);
 
-    /// <summary>The same, for a caller that has already settled them.</summary>
+    /// <summary>Returns the cached bars, for a caller that has already read them.</summary>
     public static IReadOnlyList<PlayerBar> Wanted => _wanted ??= Read(null);
 
-    /// <summary>Reads them again, for a settings file that has changed.</summary>
+    /// <summary>Clears the cache, so the next read picks up an edited settings file.</summary>
     public static void Forget() => _wanted = null;
 
     /// <summary>
-    /// What a settings file that has never heard of bars means.
+    /// The bars a settings file with no `[bars]` table means.
     ///
-    /// The same two the map service writes into a fresh file, because a file
-    /// written before this existed has to behave as one written today — an
-    /// operator who upgrades and sees nothing has no way to tell a feature that
-    /// needs configuring from one that is broken, and this was the second of
-    /// those to look at. `[commands]` has followed the same rule since it was
-    /// added; a table nobody has written is the defaults, and a table somebody
-    /// has emptied is none.
+    /// The same two the map service writes into a fresh file, so a file written
+    /// before the table existed behaves as one written today. A table nobody has
+    /// written means the defaults, and a table somebody has emptied means none.
+    /// `[commands]` follows the same rule.
     ///
-    /// Kept in step with `Config::default` in the service by hand, the way the
-    /// command privileges are, because the service is the half that owns the
-    /// format and this is the half that has to work before it has been written.
+    /// Kept in step with `Config::default` in the service by hand, as the command
+    /// privileges are. The service owns the format, and the mod has to work before
+    /// the file has been written.
     /// </summary>
     private static readonly string[] ByDefault =
     {
@@ -116,19 +113,18 @@ public sealed record PlayerBar(string Name, string Value, string Max, string Col
     }
 
     /// <summary>
-    /// Which mod an attribute probably belongs to, where its own name says so.
+    /// Returns the mod an attribute belongs to when its name says so, and null
+    /// otherwise.
     ///
-    /// Asked only where the settings did not say. An attribute carries no record
-    /// of what wrote it — the game keeps a tree of names and numbers and nothing
-    /// about their author — so this cannot be answered properly, and the one
-    /// honest guess available is that a mod naming its attributes after itself
-    /// has said so. `xskills:level` finds xskills; Rustbound Magic's
+    /// Called only where the settings did not name a group. The game keeps a tree
+    /// of names and numbers with no record of what wrote each one, so the only
+    /// available signal is a mod naming its attributes after itself.
+    /// `xskills:level` finds xskills, while Rustbound Magic's
     /// `entitybehavior-resource-currentmana_rm` finds nothing, which is why its
     /// entries name their group outright.
     ///
-    /// Nothing is invented where nothing matches. A bar with no group is shown
-    /// under a heading for the ones nobody could place, which is a true statement
-    /// about it rather than a guess dressed as one.
+    /// Returns null rather than guessing. The viewer shows a bar with no group
+    /// under a heading for the ones nobody could place.
     /// </summary>
     private static string WhoseAttribute(ICoreAPI? api, string attribute)
     {
@@ -142,8 +138,8 @@ public sealed record PlayerBar(string Name, string Value, string Max, string Col
                 continue;
             }
 
-            // The longest match, so a mod called `magic` does not answer for one
-            // called `magicextended`.
+            // Take the longest match, so a mod called `magic` does not answer for
+            // one called `magicextended`.
             if (id.Length > (best?.Info?.ModID?.Length ?? 0))
             {
                 best = mod;
@@ -154,18 +150,17 @@ public sealed record PlayerBar(string Name, string Value, string Max, string Col
     }
 
     /// <summary>
-    /// What this player's entity says about this bar, or nothing where it says
-    /// nothing.
+    /// Returns this bar's value for one player, or null when their entity does not
+    /// carry it.
     /// </summary>
     public LiveBar? Of(Entity? entity) => Of(entity?.WatchedAttributes);
 
     /// <summary>
-    /// The same, from the attributes alone.
+    /// Returns this bar's value from an attribute tree alone.
     ///
-    /// Split out because everything this decides is decided from them, and an
-    /// entity is a thing a test cannot build: reading a mod's number correctly is
-    /// the part worth checking, and it is checkable this way without a world, a
-    /// server, or the mod itself.
+    /// Split out so a test can check it. Everything the reading decides comes from
+    /// the attributes, and a test cannot build an entity, so this is checkable
+    /// without a world, a server or the mod itself.
     /// </summary>
     public LiveBar? Of(ITreeAttribute? watched)
     {
@@ -185,14 +180,14 @@ public sealed record PlayerBar(string Name, string Value, string Max, string Col
     }
 
     /// <summary>
-    /// A number out of a player's attributes, whatever kind of number it is.
+    /// Returns a number from a player's attributes, whatever numeric type it is
+    /// stored as. Returns null when the attribute is not a number.
     ///
-    /// The game's own readers answer the default for an attribute of the wrong
-    /// kind rather than converting, and a mod is free to keep mana as an int and
-    /// the experience toward the next level as a float — as the one this ships
-    /// the settings for does. So the kind is read off the attribute rather than
-    /// assumed, and anything that is not a number at all is nothing rather than
-    /// a zero, which is what tells a bar that does not apply from one at empty.
+    /// The game's readers return the default for an attribute of the wrong type
+    /// rather than converting, and a mod may keep mana as an int and experience as
+    /// a float, as the one this ships settings for does. So this reads the type off
+    /// the attribute. Returning null rather than zero is what distinguishes a bar
+    /// that does not apply from one that is empty.
     /// </summary>
     private static float? Number(ITreeAttribute watched, string key) =>
         watched.TryGetAttribute(key, out var held) ? AsNumber(held) : null;

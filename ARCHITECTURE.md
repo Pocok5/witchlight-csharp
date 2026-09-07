@@ -839,15 +839,14 @@ of its own that they wire together.
 | `Map/` | reading the surface, writing it, and settling where a world's map belongs |
 | `Palette/` | what a block looks like, the base game's colours recorded once, and asking a client for the rest |
 | `Players/` | where everybody is, what the map may say about them, and the bars a card carries |
-| `Markers/` | markers, who may see them, and what one player is shown of another's |
+| `Markers/` | markers, who may see them, what one player is shown of another's, and the asks that arrive from the web map |
 | `Claims/` | the land claims: what the map is told about them, and the taking of a new one |
-| `Web/` | what somebody asked for on the web map, and the doing of it |
 | `Portraits/` | drawing a player, which only their own machine can do |
 | `Icons/` | the marker icons, which arrive the same way a palette does |
 | `Network/` | what travels between the two sides, and how it is sliced to fit |
 | `Service/` | the other half: talking to it, running it, and what the operator set |
-| `Gui/` | the windows this mod draws in game: making a marker, with a list of presets to start it from, and somebody else's marker |
-| `Util/` | writing, failing, patterns, and identity — none of which know this mod's lifecycle |
+| `Gui/` | everything drawn on the client: the marker windows, and the map layer that puts somebody else's markers on the in-game map |
+| `Util/` | writing, failing, patterns, identity, and the two hashes. None of it knows this mod's lifecycle |
 
 Three of those folders each hold their own `*Exchange.cs`, because the
 three things only a client can supply — a palette, the icons, a

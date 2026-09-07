@@ -6,44 +6,35 @@ using Vintagestory.GameContent;
 namespace Witchlight;
 
 /// <summary>
-/// What a chiselled block is really made of.
+/// Resolves the material a chiselled block is made of.
 ///
-/// A microblock — the game's chiselled block, and what the stonework of every
-/// ruin is built out of — carries no colour of its own. It is a shell: the shape
-/// lives in the block entity beside it and so does the material, and the world
-/// reports the same `chiseledblock` at that position whether it was cut from
-/// granite or from cobblestone. The palette can only answer for the block it is
-/// handed, and the answer for that one is the near-white of an untextured shell.
-/// So every ruin drew as a white patch on ground that was otherwise the right
-/// colour, which is the one thing on the map that stands out at every zoom.
+/// A microblock is the game's chiselled block, and every ruin's stonework is
+/// built out of them. It carries no colour of its own. The shape and the
+/// material live in the block entity beside it, and the world reports the same
+/// `chiseledblock` at that position whether it was cut from granite or from
+/// cobblestone. The palette can only answer for the block it is handed, and that
+/// answer is the near-white of an untextured shell, so every ruin drew as a white
+/// patch on correctly coloured ground.
 ///
-/// Asked of the block entity instead, which is the only thing that knows. The
-/// game already answers the exact question a map pixel is asking — what is this
-/// mostly made of — so that is what is asked, rather than reading the voxels here
-/// and arriving at a worse answer for more work.
+/// This class asks the block entity instead. The game's
+/// <c>GetMajorityMaterialId</c> already answers the question a map pixel asks,
+/// so reading the voxels here would be more work for a worse answer.
 /// </summary>
 public sealed class Microblocks
 {
     /// <summary>
-    /// The block ids whose material has to be looked up.
-    ///
-    /// Held as a set so that the common case — every column in the world that is
-    /// not a ruin — costs one lookup among a dozen ids and no block entity read
-    /// at all. Only a column that really is chiselled pays for the answer.
+    /// Holds the block ids whose material needs looking up. A column that is not
+    /// chiselled costs one set lookup and no block entity read.
     /// </summary>
     private readonly HashSet<int> _shells;
 
     private Microblocks(HashSet<int> shells) => _shells = shells;
 
     /// <summary>
-    /// Every kind of chiselled block this world has registered.
-    ///
-    /// The snow-covered variants among them. They were left out while the shell
-    /// still had a colour, on the grounds that snow lying over the chiselling is
-    /// what somebody looking down sees — but the colour it had was the
-    /// missing-texture checker rather than snow, and a ruin drawn in white
-    /// against snow is a ruin that cannot be seen at all. Drawn as the stone it
-    /// is cut from, it can.
+    /// Collects every kind of chiselled block this world has registered,
+    /// including the snow-covered variants. The shell's own colour is the
+    /// missing-texture checker rather than snow, so a snow-covered ruin left out
+    /// of this set drew as white on white.
     /// </summary>
     public static Microblocks In(IWorldAccessor world)
     {
@@ -59,22 +50,21 @@ public sealed class Microblocks
         return new Microblocks(shells);
     }
 
-    /// <summary>How many kinds of chiselled block are being looked through.</summary>
+    /// <summary>Returns how many kinds of chiselled block this set covers.</summary>
     public int Kinds => _shells.Count;
 
     /// <summary>
-    /// What to record for the block at a position: the material a chiselled block
-    /// is mostly made of, or the block itself where it is not one.
+    /// Returns the material to record for the block at a position: the material a
+    /// chiselled block is mostly made of, or the block id itself where it is not
+    /// chiselled.
     ///
-    /// `shows` is handed on rather than applied to the answer, so the majority is
-    /// taken over materials the map can paint in the first place — a block
-    /// chiselled partly out of something invisible answers with the part that
-    /// draws, instead of answering with the part that does not and being refused.
+    /// <paramref name="shows"/> is passed to the game rather than applied to the
+    /// answer, so the majority runs over materials the map can paint. A block
+    /// chiselled partly out of something invisible then answers with the part
+    /// that draws.
     ///
-    /// Anything that cannot be read is the block itself. A chiselled block whose
-    /// entity has gone, or one made of nothing the palette knows, is still a block
-    /// that is standing there, and drawing it the way it was drawn before is
-    /// better than drawing a hole in the ground.
+    /// A block whose entity has gone, or one made of nothing the palette knows,
+    /// falls back to the block id.
     /// </summary>
     public int MaterialAt(IBlockAccessor accessor, BlockPos at, int id, System.Func<int, bool> shows)
     {

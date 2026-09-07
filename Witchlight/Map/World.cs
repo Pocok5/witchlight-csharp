@@ -6,27 +6,20 @@ using Vintagestory.API.Server;
 
 namespace Witchlight;
 
-/// <summary>Facts about the world that do not change while it runs.</summary>
+/// <summary>Holds the facts about the world that do not change while it runs.</summary>
 public class WorldFacts
 {
-    /// <summary>
-    /// Where a world's facts are filed.
-    ///
-    /// Named once, the way every other export names itself — the palette, the
-    /// block names, the colour maps and the icons each answer for their own path,
-    /// and a file whose name is spelled at three call sites is a file that can be
-    /// renamed at two of them.
-    /// </summary>
+    /// <summary>Returns the path a world's facts are filed at.</summary>
     public static string PathIn(string exports) => Path.Combine(exports, "world.json");
 
     /// <summary>
-    /// Where the game counts from.
+    /// The block position the map counts coordinates from.
     ///
-    /// Vintage Story shows coordinates relative to world spawn, everywhere a
-    /// player sees them — the in-game map, the position readout — while the world
-    /// itself is a million blocks across with spawn somewhere near the middle. A
-    /// map showing absolute positions is not wrong, but it does not agree with
-    /// anything the player can compare it to, which amounts to the same thing.
+    /// Vintage Story shows coordinates relative to world spawn everywhere a
+    /// player sees them, including the in-game map and the position readout. The
+    /// world itself is a million blocks across with spawn near the middle, so a
+    /// map showing absolute positions agrees with nothing the player can compare
+    /// it to.
     /// </summary>
     public int SpawnX { get; set; }
     public int SpawnY { get; set; }
@@ -35,35 +28,33 @@ public class WorldFacts
     public string Name { get; set; } = "";
 
     /// <summary>
-    /// Which savegame this is, so that a map found on its own can be matched to
-    /// the world that wrote it rather than to the world that happens to be
-    /// starting. Empty for a map written by a build older than this one.
+    /// Identifies the savegame, so a map found on its own can be matched to the
+    /// world that wrote it rather than the world that happens to be starting.
+    /// This is empty for a map written by an older build.
     /// </summary>
     public string Id { get; set; } = "";
 
     /// <summary>
     /// The y the world's oceans sit at.
     ///
-    /// Wanted by the renderer rather than by the page: how much of the season's
-    /// colour a block takes depends on how far above the sea it is, which is how
+    /// The renderer uses this rather than the page. How much of the season's
+    /// colour a block takes depends on its height above sea level, which is how
     /// the game keeps a mountainside from turning autumn with the valley.
     /// </summary>
     public int SeaLevel { get; set; }
 
 
     /// <summary>
-    /// Where the world counts from, asked in the one place that owns the answer.
+    /// Returns the position the world counts coordinates from.
     ///
-    /// There are two spawn points and they answer different questions. The world
-    /// manager's is the one an admin set explicitly, which on most worlds is
-    /// nothing at all — and its getter reads through that nothing, so asking is
-    /// not merely empty but throws. The world accessor's is the one the world
-    /// actually counts from, near the middle of the map, and it is the one every
-    /// coordinate a player reads is relative to.
+    /// The game has two spawn points. The world manager's is the one an admin set
+    /// explicitly, which on most worlds is unset, and its getter dereferences
+    /// that null rather than returning empty. The world accessor's is the one the
+    /// world counts from, near the middle of the map, and every coordinate a
+    /// player reads is relative to it.
     ///
-    /// Null until the world has finished loading, and null is said rather than
-    /// stood in for: a spawn of zero is a perfectly good coordinate, so a guess
-    /// cannot be told from an answer.
+    /// The result is null until the world has finished loading. A spawn of zero
+    /// is a valid coordinate, so null must not be stood in for.
     /// </summary>
     public static (int X, int Y, int Z)? Spawn(ICoreServerAPI api)
     {
@@ -74,16 +65,15 @@ public class WorldFacts
         }
         catch (NullReferenceException)
         {
-            // Asked before the world has one. Not knowing yet is a state, and
-            // every caller here is written to expect it.
+            // The world has no spawn point yet. Every caller expects null.
             return null;
         }
     }
 
     /// <summary>
-    /// Which world a map on disk was written for, or nothing where it does not
-    /// say. The one thing that can tell a map found loose in a folder apart from
-    /// the world that is starting now.
+    /// Returns the name of the world a map on disk was written for, or null where
+    /// it does not say. This is what tells a map found loose in a folder apart
+    /// from the world starting now.
     /// </summary>
     public static string? NameIn(string exports)
     {
@@ -96,18 +86,18 @@ public class WorldFacts
         }
         catch (Exception)
         {
-            // A map whose facts cannot be read is a map nothing can be claimed
-            // about, which is the same answer as one that does not say.
+            // An unreadable file says nothing about which world wrote the map,
+            // which is the same answer as a file that omits the name.
             return null;
         }
     }
 
     /// <summary>
-    /// One line for `/witchlight status`.
+    /// Returns one line for `/witchlight status` saying what the map counts from.
     ///
-    /// Both halves have to be right and neither is visible in game: the world has
-    /// to have a spawn point, and it has to have reached the map. A map counting
-    /// from absolute zero looks exactly like one counting from spawn until
+    /// Two things must hold and neither is visible in game. The world must have a
+    /// spawn point, and that spawn point must have reached the map. A map
+    /// counting from absolute zero looks like one counting from spawn until
     /// somebody compares a coordinate against their own screen.
     /// </summary>
     public static string Describe(ICoreServerAPI api, string exports)
@@ -124,15 +114,15 @@ public class WorldFacts
     }
 
     /// <summary>
-    /// Writes them where the map service will find them.
+    /// Writes the world's facts where the map service will find them. Returns
+    /// true when it wrote.
     ///
-    /// Called once the world is ready rather than when the mod starts: spawn is
-    /// not known that early. Nothing is written when it cannot be read, because a
-    /// file saying spawn is the origin reads exactly like a world whose spawn is
-    /// the origin — while no file at all is a state the map service names out loud.
+    /// Call this once the world is ready rather than when the mod starts, because
+    /// spawn is not known that early. Nothing is written when spawn cannot be
+    /// read. A file saying spawn is the origin reads like a world whose spawn is
+    /// the origin, while a missing file is a state the map service reports.
     ///
-    /// Says whether it managed it, so that a caller asking too early can ask again
-    /// rather than leaving the map counting from somewhere the players do not.
+    /// The return value lets a caller that asked too early ask again.
     /// </summary>
     public static bool Write(ICoreServerAPI api, string exports)
     {

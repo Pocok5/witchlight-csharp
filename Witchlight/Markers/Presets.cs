@@ -8,27 +8,25 @@ using Vintagestory.API.Common;
 namespace Witchlight;
 
 /// <summary>
-/// What a marker starts as, for the block somebody is standing on.
+/// Reads what a marker starts as for the block a player is standing on.
 ///
-/// A preset is the map service's record, kept against a uid, and it is the map's
-/// own form that ordinarily makes one. This is the same record read from the
-/// game: the mod asks the service for a player's presets at the moment they mark
-/// something, picks the one that names the block, and hands the answer back to
-/// their client.
+/// The map service keeps a player's presets against their uid, and the map's own
+/// form ordinarily makes one. This reads the same record from the game. The mod
+/// asks the service for a player's presets at the moment they mark something,
+/// picks the one that names the block, and hands the answer to their client.
 ///
-/// Nothing is held between asks. A preset made in a browser a minute ago has to
-/// apply to the next press of the key, and a cache with a clock on it is a cache
-/// that is wrong for exactly as long as that clock says.
+/// Caches nothing between requests. A preset made in a browser a minute ago has to
+/// apply to the next press of the key.
 /// </summary>
 public static class Presets
 {
     /// <summary>
-    /// What one player has set for themselves, or the empty answer where the map
-    /// service is not answering.
+    /// Returns what one player has set for themselves, or an empty answer when the
+    /// map service is not answering.
     ///
-    /// Empty rather than null. Somebody who has never opened the map has set
-    /// nothing, and a service that is down has told this side nothing — both are
-    /// answered the same way, which is by falling back to what the operator set.
+    /// Returns empty rather than null. A player who has never opened the map has
+    /// set nothing, and a service that is down has said nothing. Both fall back to
+    /// what the operator set.
     /// </summary>
     public static async Task<Person> Of(MapService service, string uid, ILogger log)
     {
@@ -37,14 +35,12 @@ public static class Presets
     }
 
     /// <summary>
-    /// Keeps one preset, and gives back everything that player has set once it
-    /// has landed. Null where the service would not take it.
+    /// Saves one preset and returns everything that player has set once it lands.
+    /// Returns null when the service would not take it.
     ///
-    /// Said out loud either way. Nothing waits on this — a marker that landed
-    /// must not be undone by a service that would not take the preset beside it —
-    /// so the log is the only thing that can report it, and a preset that
-    /// silently failed to be kept is a person pressing the same switch again
-    /// tomorrow.
+    /// Logs the result either way. Nothing waits on this, because a marker that
+    /// landed must not be undone by a service that would not take the preset beside
+    /// it, so the log is the only place a failure can be reported.
     /// </summary>
     public static async Task<Person?> Keep(
         MapService service, string uid, Preset preset, ILogger log)
@@ -65,7 +61,7 @@ public static class Presets
         return kept;
     }
 
-    /// <summary>The first preset whose pattern names this block, or nothing.</summary>
+    /// <summary>Returns the first preset whose pattern names this block, or null.</summary>
     public static Preset? For(Person person, string? code)
     {
         if (string.IsNullOrEmpty(code))
@@ -95,31 +91,30 @@ public static class Presets
 }
 
 /// <summary>
-/// One person's choices, in the words the map service keeps them in.
+/// One player's choices, in the shape the map service keeps them in.
 ///
 /// The same document the map's own settings window reads and writes, so the two
-/// sides cannot come to disagree about what somebody set — see `preferences.rs`,
-/// which is where it is stored and where the field names are decided.
+/// sides cannot disagree about what somebody set. The service's `preferences.rs`
+/// stores it and decides the field names.
 /// </summary>
 public class Person
 {
     public List<Preset> Presets { get; set; } = new();
 
     /// <summary>
-    /// Whether a new marker of theirs is private, where they have decided.
-    /// Absent means the operator's <c>allow_public_markers</c> decides, which is where
-    /// everybody starts.
+    /// True when a new marker of theirs is private. Absent when they have not
+    /// decided, and the operator's <c>allow_public_markers</c> then decides.
     /// </summary>
     public bool? PrivateByDefault { get; set; }
 
-    /// <summary>Whether making a marker keeps it as a preset without being asked.</summary>
+    /// <summary>True when making a marker keeps it as a preset without asking.</summary>
     public bool PresetsByDefault { get; set; }
 }
 
-/// <summary>What a marker starts as, when somebody marks a particular thing.</summary>
+/// <summary>What a marker starts as for one kind of block.</summary>
 public class Preset
 {
-    /// <summary>The block code this names — <c>*</c> stands for any run of
+    /// <summary>The block code this names. <c>*</c> stands for any run of
     /// characters. See <see cref="BlockPattern"/>.</summary>
     public string Pattern { get; set; } = "";
 
@@ -127,7 +122,7 @@ public class Preset
     public string Icon { get; set; } = "";
     public string Color { get; set; } = "";
 
-    /// <summary>Whether markers made from this are their owner's alone. Absent
-    /// means that person's own default decides.</summary>
+    /// <summary>True when markers made from this are their owner's alone. Absent
+    /// when that player's own default decides.</summary>
     public bool? Private { get; set; }
 }

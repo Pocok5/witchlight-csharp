@@ -9,18 +9,14 @@ using Vintagestory.API.Server;
 namespace Witchlight;
 
 /// <summary>
-/// The map service, run as a child of the game server.
+/// Runs the map service as a child of the game server.
 ///
-/// The service is a separate program and stays one: it knows pixels and this
-/// knows the game, and a map worth keeping outlives any single game server. What
-/// it does not need to be is a second thing to install, configure and remember to
-/// start. So the binary rides along in the mod archive and is run from here,
-/// while everything that made it a separate program still holds — it can be
-/// turned off with one setting and started by hand instead.
+/// The service is a separate program. Running it from here means an operator does
+/// not have to install, configure and start a second thing. One setting turns
+/// this off, and the service can then be started by hand.
 ///
-/// Killing it outright is safe and is what happens at shutdown. Everything it
-/// writes goes beside itself and is renamed into place, so there is no half
-/// written file for it to be interrupted in the middle of.
+/// Shutdown kills the process outright. The service writes every file beside
+/// itself and renames it into place, so a kill leaves no half-written file.
 /// </summary>
 public sealed class ServiceProcess : IDisposable
 {
@@ -33,12 +29,12 @@ public sealed class ServiceProcess : IDisposable
     private readonly object _writing = new();
 
     /// <summary>
-    /// Whether the stop about to happen is one we asked for.
+    /// True while a stop this class asked for is in progress.
     ///
-    /// Volatile because it is written on the game thread and read by `Ended` on
-    /// whichever threadpool thread the process's exit event arrives on. It picks
-    /// which line goes in the log, so a stale read reports a stop somebody asked
-    /// for as the service having fallen over on its own.
+    /// Volatile because the game thread writes it and <see cref="Ended"/> reads
+    /// it on whichever threadpool thread the exit event arrives on. It picks
+    /// which line goes in the log, so a stale read reports a deliberate stop as a
+    /// crash.
     /// </summary>
     private volatile bool _stopping;
 
@@ -49,16 +45,16 @@ public sealed class ServiceProcess : IDisposable
         _config = config;
     }
 
-    /// <summary>Everything the service says, on its own so it can be tailed.</summary>
+    /// <summary>The path of the service's own log file.</summary>
     public static string LogPath => Path.Combine(GamePaths.Logs, "witchlight-service.log");
 
-    /// <summary>Whether a service of ours is running right now.</summary>
+    /// <summary>True while this class's service process is running.</summary>
     public bool Running => _process is { HasExited: false };
 
     /// <summary>
-    /// Unpacks the bundled service and makes sure there is a configuration file,
-    /// without starting anything. Null when this machine has no service to run,
-    /// which is said out loud rather than left to be noticed.
+    /// Unpacks the bundled service and creates its configuration file, without
+    /// starting anything. Returns null and logs when this machine has no service
+    /// to run.
     /// </summary>
     public static ServiceProcess? Prepare(ICoreServerAPI api, Mod mod)
     {
@@ -71,15 +67,15 @@ public sealed class ServiceProcess : IDisposable
         return config is null ? null : new ServiceProcess(api, executable, config);
     }
 
-    /// <summary>Whether the settings ask for this to run itself.</summary>
+    /// <summary>True when the settings ask the mod to start the service itself.</summary>
     public bool Wanted => Settings.Autostarts;
 
     /// <summary>
-    /// Starts it, and says what happened either way.
+    /// Starts the service and returns one sentence saying what happened.
     ///
-    /// Its output goes to a log of its own rather than into the server's, because
-    /// it is a second program with its own version, its own errors and its own
-    /// pace, and reading either one is easier when they are not interleaved.
+    /// Sends the service's output to <see cref="LogPath"/> rather than the
+    /// server's log. The service has its own version, errors and pace, and either
+    /// log is easier to read when the two are not interleaved.
     /// </summary>
     public string Start()
     {
@@ -99,28 +95,27 @@ public sealed class ServiceProcess : IDisposable
             };
             started.ArgumentList.Add("--config");
             started.ArgumentList.Add(_config);
-            // Named outright rather than left to be worked out. Where each world
-            // keeps its own map there are several to choose between, and only
-            // this half knows which world is running.
+            // Name the export directory outright. Where each world keeps its own
+            // map there are several to choose between, and only the mod knows
+            // which world is running.
             started.ArgumentList.Add("--exports");
             started.ArgumentList.Add(Settings.Exports);
             started.ArgumentList.Add("serve");
 
-            // What a previous run said about where it was listening. Cleared
-            // before this one starts so that waiting for it to appear is waiting
-            // for this service rather than reading the last one's answer.
+            // Clear what a previous run published about where it was listening,
+            // so the wait below reads this service's answer and not the last
+            // one's.
             Forget();
 
-            // Truncated on start, and shared so that a tail already watching it
-            // keeps working across a restart.
+            // Truncate the log on start, and share it so a tail already watching
+            // it keeps working across a restart.
             //
-            // Opened under the lock that writes it, because the two sides of this
-            // field are not on the same thread: a start comes off the game thread
-            // and every line written to it arrives on a threadpool thread, from
-            // the process's own output. Published outside the lock, the writer is
-            // reachable before `AutoFlush` has been set on it. Whatever a previous
-            // run left open is closed here rather than dropped with its handle
-            // still held — a service that stopped on its own never closed one.
+            // Open it under the lock that writes it. A start comes off the game
+            // thread while every line written to it arrives on a threadpool
+            // thread. Publishing the writer outside the lock would make it
+            // reachable before `AutoFlush` is set. Dispose whatever a previous
+            // run left open, since a service that stopped on its own never
+            // closed one.
             Directory.CreateDirectory(GamePaths.Logs);
             lock (_writing)
             {
@@ -156,7 +151,7 @@ public sealed class ServiceProcess : IDisposable
         }
     }
 
-    /// <summary>Stops it, and says what happened either way.</summary>
+    /// <summary>Stops the service and returns one sentence saying what happened.</summary>
     public string Stop()
     {
         var process = _process;
@@ -187,7 +182,7 @@ public sealed class ServiceProcess : IDisposable
         }
     }
 
-    /// <summary>One line for `/witchlight status`.</summary>
+    /// <summary>Returns one line describing the service, for `/witchlight status`.</summary>
     public string Describe() => Running
         ? $"service: running (pid {_process!.Id}), log at {LogPath}"
         : Wanted
@@ -195,13 +190,11 @@ public sealed class ServiceProcess : IDisposable
             : "service: not started, autostart is off in " + _config;
 
     /// <summary>
-    /// Puts the address in the server's own log, once the service has one.
+    /// Waits for the service to publish its address, then logs it to the server's
+    /// own log, where an operator is already reading.
     ///
-    /// It takes a moment to bind and say so, and this is wanted in the log a
-    /// server operator is already reading rather than only in the service's own.
-    /// Waited for rather than worked out here: which addresses a bind of
-    /// `0.0.0.0` actually answers on is the service's question and it has already
-    /// answered it.
+    /// Waits rather than working the address out here. The service resolves which
+    /// addresses a bind such as `0.0.0.0` answers on, and it has already done so.
     /// </summary>
     private void SayWhereItIsListening()
     {
@@ -231,21 +224,19 @@ public sealed class ServiceProcess : IDisposable
     }
 
     /// <summary>
-    /// How long to wait for the service to say where it is.
-    ///
-    /// Long enough for a cold start on a slow disk, short enough that a service
-    /// which will never answer is reported while somebody is still watching.
+    /// How long to wait for the service to publish its address. Long enough for a
+    /// cold start on a slow disk, short enough to report a service that will
+    /// never answer while somebody is still watching.
     /// </summary>
     private static readonly TimeSpan WaitForAddress = TimeSpan.FromSeconds(20);
 
     /// <summary>
-    /// Takes down everything the service published about itself, so that nothing
-    /// hands a player the address of a map that is not there — and nothing posts
-    /// live positions at whatever took its port next.
+    /// Deletes everything the service published about itself.
     ///
-    /// The second matters more than the first. An address that has gone answers
-    /// nothing and is merely useless; a port that has been taken over answers
-    /// something, and there is no telling what.
+    /// Stops the mod handing a player the address of a map that is not there, and
+    /// stops it posting live positions to whatever took the service's port next.
+    /// The second matters more: an address that has gone answers nothing, while a
+    /// port something else has taken answers.
     /// </summary>
     private void Forget()
     {
@@ -283,17 +274,17 @@ public sealed class ServiceProcess : IDisposable
     }
 
     /// <summary>
-    /// Says that it stopped, and how loudly depends on whether anybody meant it.
+    /// Logs that the service stopped, more loudly when nobody asked it to.
     ///
-    /// Not restarted from here. A service that will not start — a port already
-    /// taken, settings it cannot read — fails the same way every time, and a
-    /// restart loop turns one legible error into a log nobody can read.
+    /// Does not restart it. A service that will not start, because its port is
+    /// taken or its settings cannot be read, fails the same way every time, and a
+    /// restart loop turns one legible error into an unreadable log.
     /// </summary>
     private void Ended(Process? which)
     {
-        // Read from the process the event carries. By the time a stop we asked
-        // for gets here the field may already be cleared, which is how this came
-        // to report an exit code of nothing at all.
+        // Read the exit code from the process the event carries. The _process
+        // field may already be cleared by the time a deliberate stop reaches
+        // here, which would report no exit code at all.
         var code = Exited(which);
 
         if (_stopping)
@@ -309,7 +300,7 @@ public sealed class ServiceProcess : IDisposable
             code, LogPath);
     }
 
-    /// <summary>An exit code, or what to print when there is not one to be had.</summary>
+    /// <summary>Returns the process's exit code, or "unknown" when it has none.</summary>
     private static string Exited(Process? which)
     {
         try
@@ -341,8 +332,8 @@ public sealed class ServiceProcess : IDisposable
         {
             if (process is { HasExited: false })
             {
-                // Safe to end outright: everything it writes is put beside itself
-                // and renamed into place, so nothing is caught half written.
+                // Safe to kill. The service writes every file beside itself and
+                // renames it into place, so nothing is caught half written.
                 process.Kill(entireProcessTree: true);
                 process.WaitForExit(5000);
             }
@@ -350,7 +341,7 @@ public sealed class ServiceProcess : IDisposable
         }
         catch (Exception)
         {
-            // Shutting down. A service that has already gone is the outcome wanted.
+            // Shutting down. A service that has already gone is the outcome.
         }
 
         Forget();

@@ -5,24 +5,24 @@ using Vintagestory.GameContent;
 namespace Witchlight;
 
 /// <summary>
-/// The client half of Witchlight: what runs, and when.
+/// The client half of Witchlight.
 ///
-/// A client is asked for three things the server cannot produce for itself — a
-/// picture of its own player, a block colour palette, and the marker art — and it
-/// shows one thing the server cannot show it: everybody else's markers on the
-/// in-game map. That is the whole of what this side does.
+/// The server asks a client for three things it cannot produce itself: a picture
+/// of its own player, a block colour palette, and the marker art. The client shows
+/// one thing the server cannot show it: everybody else's markers on the in-game
+/// map.
 ///
-/// Nothing is ever sent unprompted except a portrait, and that only when this
-/// player's own character has changed and settled.
+/// Sends nothing unprompted except a portrait, and that only once this player's
+/// character has changed and settled.
 /// </summary>
 public partial class WitchlightClient : ModSystem
 {
     private ICoreClientAPI? _capi;
 
-    /// <summary>Draws this player when asked. Only a client can: nobody else has them.</summary>
+    /// <summary>Draws this player when asked. Only their own client can.</summary>
     private PortraitCapture? _portrait;
 
-    /// <summary>Says when this player has changed and stopped changing.</summary>
+    /// <summary>Reports when this player has changed and stopped changing.</summary>
     private PortraitWatch? _watch;
 
     public override bool ShouldLoad(EnumAppSide side) => side == EnumAppSide.Client;
@@ -30,8 +30,8 @@ public partial class WitchlightClient : ModSystem
     public override void StartClientSide(ICoreClientAPI api)
     {
         _capi = api;
-        // Everyone else's markers, on this player's map, as a layer of this
-        // mod's own. The game makes it when the world loads; what it shows is
+        // Everyone else's markers, on this player's map, as a layer of this mod's
+        // own. The game constructs it when the world loads, and what it shows is
         // handed to it as it arrives.
         api.ModLoader.GetModSystem<WorldMapManager>()
             .RegisterMapLayer<SharedMarkerMapLayer>(

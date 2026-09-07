@@ -11,16 +11,15 @@ using Vintagestory.API.Common;
 namespace Witchlight;
 
 /// <summary>
-/// What another mod uses to keep rows on the map.
+/// The API another mod uses to keep rows on the map.
 ///
-/// A plugin is a mod of its own. It declares what its rows look like, sends
-/// them, and ships a script the map page runs — and it never speaks HTTP, never
-/// holds the service's address or token, and never writes SQL. All three of
-/// those live here, because all three are things that go wrong quietly when
-/// every plugin has its own copy: the service's port moves every time it starts,
-/// its token is minted fresh, and the recovery from both is dropping a cached
-/// endpoint at exactly the right moment. <see cref="MapService"/> already does
-/// that correctly and this is a way through to it.
+/// A plugin is a mod of its own. It declares what its rows look like, sends them,
+/// and ships a script the map page runs. It never speaks HTTP, never holds the
+/// service's address or token, and never writes SQL. All three live here, because
+/// all three go wrong quietly when every plugin has its own copy. The service's
+/// port moves every time it starts and its token is minted fresh, and recovering
+/// from both means dropping a cached endpoint at the right moment.
+/// <see cref="MapService"/> does that, and this class is the way through to it.
 ///
 /// Reached from a plugin's own <c>Start</c>:
 ///
@@ -33,38 +32,38 @@ namespace Witchlight;
 ///     .SeenBy(PluginScope.Owner));
 /// </code>
 ///
-/// Reference Witchlight at compile time only, with Copy Local off: two mod
+/// Reference Witchlight at compile time only, with Copy Local off. Two mod
 /// assemblies carrying the same ModSystem break both. Declare it in
 /// <c>modinfo.json</c> under <c>dependencies</c>, or guard with
-/// <c>api.ModLoader.IsModEnabled("witchlight")</c> from a method of its own —
-/// a local of a type from an absent mod fails at method entry, guard or no
-/// guard, so the guard has to be in a different method from the use.
+/// <c>api.ModLoader.IsModEnabled("witchlight")</c> from a method of its own. A
+/// local of a type from an absent mod fails at method entry whether or not a
+/// guard precedes it, so the guard must be in a different method from the use.
 /// </summary>
 public sealed class WitchlightPlugins
 {
     /// <summary>
     /// Rows waiting to be sent, by plugin.
     ///
-    /// Buffered rather than posted as they are made. A collector scanning ore
-    /// produces rows far faster than a five-second HTTP round trip retires them,
-    /// and posting each one would either block the game thread or, with the
-    /// drop-if-busy rule the live feeds use, quietly lose most of them. A
-    /// position dropped is replaced two seconds later; a row dropped is gone,
-    /// so these queue and drain on a tick.
+    /// Buffers rows rather than posting each as it is made. A collector scanning
+    /// ore produces rows far faster than a five-second HTTP round trip retires
+    /// them, so posting each one would either block the game thread or, under the
+    /// drop-if-busy rule the live feeds use, lose most of them. A dropped
+    /// position is replaced two seconds later, while a dropped row is gone.
     /// </summary>
     private readonly ConcurrentDictionary<string, PendingRows> _waiting = new();
 
-    /// <summary>Which plugins have registered, so a send can say if one has not.</summary>
+    /// <summary>The plugins that have registered, so a send can report one that
+    ///  has not.</summary>
     private readonly ConcurrentDictionary<string, byte> _registered = new();
 
     private readonly MapService _service;
     private readonly ILogger _log;
 
-    /// <summary>Where the map keeps everything, which is where a plugin's own
-    /// files are copied to.</summary>
+    /// <summary>The map's export directory, which is where a plugin's own files
+    /// are copied to.</summary>
     private readonly string _exports;
 
-    /// <summary>Whether a drain is already running, so two ticks do not overlap.</summary>
+    /// <summary>True while a drain is running, so two ticks do not overlap.</summary>
     private int _draining;
 
     internal WitchlightPlugins(MapService service, ILogger log, string exports)
@@ -74,19 +73,17 @@ public sealed class WitchlightPlugins
         _exports = exports;
     }
 
-    /// <summary>One row, whose it is, and what they are called.</summary>
+    /// <summary>One row, the uid of its owner, and that owner's name.</summary>
     private sealed record Pending(string Owner, string Called, object Row);
 
     /// <summary>
     /// Rows waiting for one plugin, oldest first.
     ///
     /// A list behind a lock rather than a <see cref="ConcurrentQueue{T}"/>,
-    /// because a batch that fails has to go back at the FRONT and a concurrent
-    /// queue can only append. That ordering is not a nicety: a plugin that sends
-    /// a row for a key, fails, and then sends a newer row for the same key would
-    /// otherwise have the older one land last and overwrite the newer, since the
-    /// service replaces a row by its key. Oldest-first in, oldest-first out, and
-    /// a failure changes neither.
+    /// because a failed batch goes back at the front and a concurrent queue can
+    /// only append. The service replaces a row by its key, so a plugin that sends
+    /// a row, fails, and then sends a newer row for the same key would otherwise
+    /// land the older one last and overwrite the newer.
     /// </summary>
     private sealed class PendingRows
     {
@@ -103,8 +100,8 @@ public sealed class WitchlightPlugins
         }
 
         /// <summary>
-        /// Up to <paramref name="most"/> rows from the front, all of one owner,
-        /// taken off. Empty where there is nothing waiting.
+        /// Takes up to <paramref name="most"/> rows off the front, all belonging
+        /// to one owner. Returns an empty batch when nothing is waiting.
         /// </summary>
         public List<Pending> Take(int most)
         {
@@ -128,7 +125,7 @@ public sealed class WitchlightPlugins
             }
         }
 
-        /// <summary>A batch that did not land, back where it was taken from.</summary>
+        /// <summary>Puts a batch that did not land back at the front of the queue.</summary>
         public void PutBack(List<Pending> batch)
         {
             lock (_rows) { _rows.InsertRange(0, batch); }
@@ -138,35 +135,33 @@ public sealed class WitchlightPlugins
     /// <summary>How many rows go in one post. Enough to be worth a round trip.</summary>
     private const int Batch = 500;
 
-    /// <summary>How many times to ask the service to take a registration, and
-    /// how long to leave between asks. Thirty seconds in total, which is far
-    /// longer than a service takes to bind and short enough that a service that
-    /// is never coming says so while somebody is still watching the log.</summary>
+    /// <summary>How many times to offer a registration, and how long to wait
+    /// between attempts. Thirty seconds in total, far longer than a service takes
+    /// to bind and short enough to report a service that is never coming while
+    /// somebody is still watching the log.</summary>
     private const int RegisterTries = 30;
     private const int RegisterWaitMs = 1000;
 
     /// <summary>
-    /// Says what a plugin is, and what its rows look like.
+    /// Registers a plugin and the shape of its rows. Returns a handle to keep, or
+    /// null when the service would not take it.
     ///
-    /// The plugin is named by its own modid, taken from the mod handed in. That
-    /// is the one name it has: the map keys its store, its addresses and its
-    /// sharing by it, and its files are served under it.
+    /// Names the plugin by the modid of the mod handed in. The map keys its store,
+    /// its addresses and its sharing by that name, and serves its files under it.
     ///
-    /// Called once, from the plugin's own <c>Start</c>. Makes the plugin's
-    /// database where there is none and carries an added column onto one that is
-    /// already there; anything else that moved is refused and said so, with the
-    /// rows left where they are.
+    /// Call once, from the plugin's own <c>Start</c>. Creates the plugin's table
+    /// where there is none and carries an added column onto one already there.
+    /// Refuses any other change and reports it, leaving the rows where they are.
     ///
-    /// Answers a handle to keep, or null where the service would not take it —
-    /// which is not fatal to the game and is not treated as such: a plugin whose
-    /// rows are not being kept should say so in the log and go on running.
+    /// A null return is not fatal. A plugin whose rows are not being kept should
+    /// log that and go on running.
     /// </summary>
     public async Task<RegisteredPlugin?> Register(Mod mod, PluginShape shape)
     {
-        // The mod's own id, rather than one it repeats. A plugin is addressed by
-        // this everywhere — its store, its rows, the files it ships, who it is
-        // shared with — and a second copy of the name is a second thing to keep
-        // in step with the first.
+        // Take the mod's own id rather than one the plugin repeats. This name
+        // addresses the plugin's store, its rows, the files it ships and who it
+        // is shared with, so a second copy would be a second thing to keep in
+        // step.
         var id = mod.Info?.ModID ?? "";
 
         if (string.IsNullOrWhiteSpace(id) || shape.Columns.Count == 0 || shape.Key.Count == 0)
@@ -175,25 +170,23 @@ public sealed class WitchlightPlugins
             return null;
         }
 
-        // The plugin's own files, out of its mod and beside the map. Done here
-        // rather than by the plugin so that installing one is installing a mod
-        // and nothing else: nobody unpacks a second archive into a directory
-        // they should not have to know exists.
+        // Copy the plugin's files here rather than in the plugin, so installing
+        // a plugin is installing a mod and nothing else.
         //
         // A plugin whose files will not copy still registers and still keeps
-        // rows. It draws nothing, which is worth saying and is not worth
+        // rows. It draws nothing, which is worth logging and is not worth
         // refusing to store somebody's data over.
         if (PluginFiles.Install(mod, id, _exports, _log) is { } wrong)
         {
             _log.Warning("[witchlight] plugin {0}: nothing to draw with — {1}", id, wrong);
         }
 
-        // Waited for rather than tried once. The map service is a process this
-        // mod has just started, and it writes the file naming its port a moment
-        // after it is up — so the first ask lands before there is anything to
-        // ask. Everything else this mod sends is on a clock and simply arrives
-        // late; a registration happens once, and one that failed would leave a
-        // plugin storing nothing until the server was restarted.
+        // Retry rather than trying once. The mod has just started the map
+        // service, which writes the file naming its port a moment after it is up,
+        // so the first attempt lands before there is anything to ask. Everything
+        // else this mod sends is on a clock and arrives late instead, while a
+        // registration happens once and a failed one would leave the plugin
+        // storing nothing until the next server restart.
         var body = JsonConvert.SerializeObject(shape);
         string? said = null;
         for (var attempt = 0; attempt < RegisterTries; attempt++)
@@ -222,24 +215,24 @@ public sealed class WitchlightPlugins
     }
 
     /// <summary>
-    /// One row, kept.
+    /// Stores one row.
     ///
-    /// Queued rather than sent, so this returns at once and may be called from
-    /// wherever a plugin finds something worth keeping. What is queued goes out
-    /// on the next drain.
-    ///
-    /// <paramref name="owner"/> is the player whose row this is; a world-scoped
-    /// plugin passes null. The player rather than their uid, so that who a row
-    /// belongs to and what they are called cannot be given as a mismatched pair —
-    /// the name is what a reader is shown for a row shared by somebody who is not
-    /// online. The service takes this as the answer about who may see the row,
-    /// which is why it is a player the mod knows and not anything a page said.
+    /// Queues the row and returns at once, so a plugin may call this wherever it
+    /// finds something worth keeping. The queue goes out on the next drain.
     /// </summary>
+    /// <param name="owner">
+    /// The player the row belongs to. A world-scoped plugin passes null. Takes
+    /// the player rather than their uid, so the uid and the name cannot be given
+    /// as a mismatched pair. A reader is shown that name for a row shared by
+    /// somebody who is not online, and the service decides who may see the row
+    /// from it, so it must be a player the mod knows rather than anything a page
+    /// said.
+    /// </param>
     public void Store(string id, object row, IPlayer? owner = null) =>
         _waiting.GetOrAdd(id, _ => new PendingRows())
             .Add(new Pending(owner?.PlayerUID ?? "", owner?.PlayerName ?? "", row));
 
-    /// <summary>Many rows at once, which is the same queue.</summary>
+    /// <summary>Stores many rows at once, onto the same queue.</summary>
     public void StoreMany(string id, IEnumerable<object> rows, IPlayer? owner = null)
     {
         var queue = _waiting.GetOrAdd(id, _ => new PendingRows());
@@ -252,13 +245,13 @@ public sealed class WitchlightPlugins
     }
 
     /// <summary>
-    /// Rows the service is holding, as this plugin may see them.
-    ///
-    /// <paramref name="ranges"/> names the columns to bound and by how much,
-    /// which the plugin must have declared ranged. Everything, where none are
-    /// given — which is fine for a small plugin and is not for one holding a
-    /// world's worth of anything.
+    /// Returns the rows the service is holding for this plugin.
     /// </summary>
+    /// <param name="ranges">
+    /// The columns to bound and by how much. The plugin must have declared each
+    /// one ranged. Passing none returns everything, which suits a small plugin
+    /// and not one holding a world's worth of rows.
+    /// </param>
     public async Task<JArray> Query(string id, IReadOnlyDictionary<string, (long Low, long High)>? ranges = null)
     {
         var query = ranges is null || ranges.Count == 0
@@ -282,21 +275,18 @@ public sealed class WitchlightPlugins
         }
     }
 
-    /// <summary>
-    /// How many rows are waiting to go out, for the status an operator reads.
-    /// </summary>
+    /// <summary>Returns how many rows are waiting to go out, for the status line.</summary>
     public int Waiting => _waiting.Values.Sum(rows => rows.Count);
 
     /// <summary>
-    /// Sends what has piled up since the last one.
+    /// Sends the rows that piled up since the last drain.
     ///
-    /// Called on a tick rather than by a plugin. One drain at a time, and one
-    /// post per plugin per drain, so a plugin with a backlog empties over several
-    /// ticks instead of holding the queue for all of them.
+    /// Runs on a tick rather than being called by a plugin. Runs one drain at a
+    /// time and posts once per plugin per drain, so a plugin with a backlog
+    /// empties over several ticks instead of holding the queue for all of them.
     ///
-    /// A batch that does not land is put back at the front — a row is worth
-    /// keeping or it would not have been sent, and a service that is restarting
-    /// is a reason to wait rather than to throw the rows away.
+    /// Puts a batch that does not land back at the front. A restarting service is
+    /// a reason to wait rather than to throw the rows away.
     /// </summary>
     internal void Drain()
     {
@@ -317,9 +307,8 @@ public sealed class WitchlightPlugins
                     }
 
                     // One owner per post, since the service is told once whose
-                    // the rows are. A batch stops at the first row of somebody
-                    // else's, which keeps the common case — one player's finds —
-                    // to one post.
+                    // the rows are. A batch stops at the first row belonging to
+                    // somebody else, which keeps one player's finds to one post.
                     var batch = waiting.Take(Batch);
                     if (batch.Count == 0)
                     {
@@ -338,10 +327,10 @@ public sealed class WitchlightPlugins
                     if (said is not null)
                     {
                         waiting.PutBack(batch);
-                        // A warning rather than a debug line. Rows held back are
-                        // rows the map does not have, which is the thing an
-                        // operator is looking for when a plugin draws nothing —
-                        // and a debug line is not on in the log they are reading.
+                        // Warn rather than log at debug. Rows held back are rows
+                        // the map does not have, which is what an operator looks
+                        // for when a plugin draws nothing, and debug logging is
+                        // off in the log they are reading.
                         _log.Warning(
                             "[witchlight] plugin {0}: {1} rows held back, {2}", id, batch.Count, said);
                     }
@@ -365,12 +354,12 @@ public sealed class WitchlightPlugins
 }
 
 /// <summary>
-/// One plugin's own way in, once it has registered.
+/// One plugin's handle, returned once it has registered.
 ///
-/// The same three things <see cref="WitchlightPlugins"/> offers, with the
-/// plugin's name already filled in. That is the whole of it: a plugin holding
-/// one of these cannot name another plugin's store by mistake, and cannot spell
-/// its own wrongly — the name came from its modid and it never types it.
+/// Offers the same three calls <see cref="WitchlightPlugins"/> does, with the
+/// plugin's name already filled in. A plugin holding one of these cannot name
+/// another plugin's store or misspell its own, since the name came from its modid
+/// and the plugin never types it.
 /// </summary>
 public sealed class RegisteredPlugin
 {
@@ -382,7 +371,7 @@ public sealed class RegisteredPlugin
         Id = id;
     }
 
-    /// <summary>What this plugin is called, which is its modid.</summary>
+    /// <summary>This plugin's name, which is its modid.</summary>
     public string Id { get; }
 
     /// <inheritdoc cref="WitchlightPlugins.Store"/>

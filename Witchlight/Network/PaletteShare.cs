@@ -6,28 +6,29 @@ using ProtoBuf;
 namespace Witchlight;
 
 /// <summary>
-/// Sent to one player when the server cannot build a usable palette itself.
+/// Asks one player's client for a palette, when the server cannot build a usable
+/// one itself.
 /// </summary>
 [ProtoContract]
 public class PaletteRequest
 {
-    /// <summary>What the server needs a palette for; the client echoes it back.</summary>
+    /// <summary>What the server needs a palette for. The client echoes it back.</summary>
     [ProtoMember(1)]
     public string Fingerprint { get; set; } = "";
 }
 
 /// <summary>
-/// A palette on the wire, in slices.
+/// Carries a palette on the wire, in slices.
 ///
-/// Three things keep it small. Block codes are not sent at all — the server has
-/// its own registry and can turn an id back into a code, and the codes were by
-/// far the largest part of the message. Colour map names repeat across thousands
-/// of blocks, so they are interned and referenced by index. And the numbers are
+/// Three things keep it small. Block codes are not sent at all, because the
+/// server can turn an id back into a code from its own registry, and the codes
+/// were the largest part of the message. Colour map names repeat across thousands
+/// of blocks, so they are interned and referenced by index. The numbers are
 /// packed rather than tagged one by one.
 ///
-/// It is still sent in slices: a server rejects an oversized packet by
-/// disconnecting the client, so the size of a mod set must not decide whether
-/// this works at all.
+/// It still travels in slices, because a server rejects an oversized packet by
+/// disconnecting the client. The size of a mod set must not decide whether this
+/// works.
 /// </summary>
 [ProtoContract]
 public class PaletteTable
@@ -36,7 +37,7 @@ public class PaletteTable
     [ProtoMember(2)] public string GameVersion { get; set; } = "";
     [ProtoMember(3)] public int Textured { get; set; }
 
-    /// <summary>Colour map names, referenced by index below.</summary>
+    /// <summary>The colour map names, referenced by index below.</summary>
     [ProtoMember(4)] public List<string> ColorMaps { get; set; } = new();
 
     /// <summary>Which slice this is, and how many there are in total.</summary>
@@ -45,13 +46,13 @@ public class PaletteTable
 
     [ProtoMember(7, IsPacked = true)] public List<int> Ids { get; set; } = new();
 
-    // Zigzagged, all three: they are mostly -1, and a plain varint spends ten
+    // All three are zigzagged. They are mostly -1, and a plain varint spends ten
     // bytes on a negative number.
-    /// <summary>Packed 0xRRGGBB, or -1 for a block with nothing to draw.</summary>
+    /// <summary>The colour as packed 0xRRGGBB, or -1 for a block with nothing to draw.</summary>
     [ProtoMember(8, IsPacked = true, DataFormat = DataFormat.ZigZag)]
     public List<int> Colors { get; set; } = new();
 
-    /// <summary>Index into <see cref="ColorMaps"/>, or -1.</summary>
+    /// <summary>An index into <see cref="ColorMaps"/>, or -1 for none.</summary>
     [ProtoMember(9, IsPacked = true, DataFormat = DataFormat.ZigZag)]
     public List<int> Climate { get; set; } = new();
 
@@ -59,27 +60,27 @@ public class PaletteTable
     public List<int> Season { get; set; } = new();
 
     /// <summary>
-    /// Which kind of colourless each block is: 1 where it draws nothing at all,
-    /// 0 where it draws something this client could not colour, -1 where the
-    /// sender said nothing.
+    /// Says which kind of colourless each block is. 1 means it draws nothing at
+    /// all, 0 means it draws something this client could not colour, and -1 means
+    /// the sender said nothing.
     ///
-    /// It travels because the two are not the same fact and the server cannot
-    /// work either of them out for itself — its own assets are the ones that
-    /// could not answer. Without it every colourless block in a client's palette
-    /// arrived saying nothing: the server could no longer tell a gap worth asking
-    /// about from a block with nothing to show, so it stopped noticing gaps at
-    /// all, and the map painted air and the invisible placeholders of large
-    /// structures as ground nobody had ever explored.
+    /// This travels because the first two are different facts and the server
+    /// cannot work out either for itself, since its own assets are the ones that
+    /// could not answer. Without it, every colourless block in a client's palette
+    /// arrived saying nothing. The server could not tell a gap worth asking about
+    /// from a block with nothing to show, so it stopped noticing gaps, and the map
+    /// painted air and the invisible placeholders of large structures as
+    /// unexplored ground.
     ///
-    /// The third state is what makes an older client's palette safe to take. A
-    /// list that is not there reads as "said nothing" rather than as a wall of
-    /// zeroes, which would have turned every one of those blocks into a gap the
-    /// server chased forever.
+    /// The third state makes an older client's palette safe to take. A missing
+    /// list reads as saying nothing rather than as a wall of zeroes, which would
+    /// have turned every one of those blocks into a gap the server chased
+    /// forever.
     /// </summary>
     [ProtoMember(11, IsPacked = true, DataFormat = DataFormat.ZigZag)]
     public List<int> Hidden { get; set; } = new();
 
-    /// <summary>Blocks per slice. Ten bytes each, so this is a small packet.</summary>
+    /// <summary>Sets the blocks per slice. Each costs about ten bytes.</summary>
     public const int SliceSize = 8000;
 
     /// <summary>Splits a palette into packets a server will accept.</summary>
@@ -129,8 +130,8 @@ public class PaletteTable
             slices.Add(slice);
         }
 
-        // Interning fills as the slices are built, so every slice carries the
-        // finished list rather than a prefix of it.
+        // Interning fills while the slices are built, so assign the finished
+        // list to every slice rather than leaving each with a prefix.
         foreach (var slice in slices)
         {
             slice.ColorMaps = maps;
@@ -187,13 +188,13 @@ public class PaletteTable
     }
 
     /// <summary>
-    /// What this slice says about whether the block at <paramref name="at"/>
-    /// draws, or null where it says nothing.
+    /// Returns what this slice says about whether the block at
+    /// <paramref name="at"/> draws, or null where it says nothing.
     ///
-    /// The whole list is checked against the ids rather than one entry read out
-    /// of it, because a slice from a client older than this field carries no list
-    /// at all and <c>ElementAtOrDefault</c> would answer 0 — "draws something" —
-    /// for every block in it.
+    /// This checks the whole list against the ids rather than reading one entry.
+    /// A slice from a client older than this field carries no list at all, and
+    /// <c>ElementAtOrDefault</c> would answer 0, meaning it draws something, for
+    /// every block in it.
     /// </summary>
     private bool? DrawingAt(int at)
     {

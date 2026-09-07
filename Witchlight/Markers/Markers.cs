@@ -10,19 +10,19 @@ using Vintagestory.GameContent;
 namespace Witchlight;
 
 /// <summary>
-/// What a waypoint is, as the rest of this mod needs it.
+/// The one place that knows what a waypoint is, as the rest of this mod needs it.
 ///
-/// Four things were being worked out separately in as many files: where the
-/// waypoint layer is, what identifies one waypoint, what its packed colour says
-/// in CSS, and how to put a new one on the map. Each of those has one right
-/// answer and no reason to have two, so each has one function here and every
-/// caller is a thin call against it.
+/// Answers where the waypoint layer is, what identifies one waypoint, what its
+/// packed colour is in CSS, and how to add, change or remove one. Every caller is
+/// a thin call against these.
 /// </summary>
 public static class Markers
 {
     /// <summary>
-    /// The layer every waypoint lives on, or null on a server whose map manager
-    /// is not up. Asked for rather than held: mods load in an order this does not
+    /// Returns the layer every waypoint lives on, or null on a server whose map
+    /// manager is not up.
+    ///
+    /// Looked up each time rather than held. Mods load in an order this does not
     /// choose, and a null answer on one tick is answered by the next.
     /// </summary>
     public static WaypointMapLayer? Layer(ICoreAPI api)
@@ -35,30 +35,29 @@ public static class Markers
     }
 
     /// <summary>
-    /// What the game names a marker nobody named. The map's own form asks for
-    /// this same word — three programs agree on it.
+    /// The name the game gives a marker nobody named. The map's own form uses the
+    /// same word.
     /// </summary>
     public const string Unnamed = "Marker";
 
-    /// <summary>The most a marker's name may be. Longer is a paragraph, not a name.</summary>
+    /// <summary>The longest a marker's name may be.</summary>
     public const int LongestTitle = 128;
 
     /// <summary>The picture the game draws a marker with when nobody chose one.</summary>
     public const string PlainIcon = "circle";
 
-    /// <summary>What a marker whose colour did not survive the trip is drawn.</summary>
+    /// <summary>The CSS colour for a marker whose own colour could not be read.</summary>
     public const string WhiteHex = "#ffffff";
 
-    /// <summary>The same, as a waypoint stores it.</summary>
+    /// <summary>The same fallback colour, packed as a waypoint stores it.</summary>
     public static readonly int White = Packed(WhiteHex)!.Value;
 
     /// <summary>
-    /// What a marker is called, or something rather than nothing.
+    /// Returns a marker's name, trimmed to <see cref="MostName"/> and falling back
+    /// to <see cref="Unnamed"/>.
     ///
-    /// Two paths make a marker — the map's own form and a press of the key in
-    /// game — and both had their own copy of this, their own <c>128</c> and their
-    /// own spelling of the word for an unnamed one. It is one question about one
-    /// kind of thing, so it is answered here and both are a call against it.
+    /// Both paths that make a marker, the map's own form and a press of the key in
+    /// game, call this, so they cannot disagree about the length or the word.
     /// </summary>
     public static string Title(string? said)
     {
@@ -71,20 +70,19 @@ public static class Markers
     }
 
     /// <summary>
-    /// The picture to draw a marker with, or the game's own default.
+    /// Returns the picture to draw a marker with, or <see cref="DefaultIcon"/>.
     ///
-    /// Four places asked this and one of them trimmed, so a name arriving with a
-    /// space around it was a plain marker on one path and a picture that can
-    /// never be found on the other. Trimmed here: a name with a space in it is
-    /// not a file on anybody's disk.
+    /// Trims the name. A picture name with a space around it is not a file on
+    /// anybody's disk, and every caller goes through here so they cannot disagree
+    /// about that.
     /// </summary>
     public static string Picture(string? icon) =>
         string.IsNullOrWhiteSpace(icon) ? PlainIcon : icon.Trim();
 
     /// <summary>
-    /// Identity for a marker as anything outside the game sees it.
+    /// Returns the identity anything outside the game knows a marker by.
     ///
-    /// The waypoint's own guid where there is one; position and title stand in
+    /// Uses the waypoint's own guid where there is one, and its position and title
     /// where there is not, which is enough to keep one marker from reading as two.
     /// </summary>
     public static string Key(Waypoint waypoint)
@@ -98,13 +96,13 @@ public static class Markers
     }
 
     /// <summary>
-    /// A waypoint's packed colour as CSS.
+    /// Converts a waypoint's packed colour to CSS.
     ///
-    /// The game packs one as ARGB — red in the high bytes — because every path
-    /// that makes a waypoint ends in <c>Color.ToArgb</c> or
-    /// <c>ColorUtil.Hex2Int</c>, and it draws one by reading red back out of bit
-    /// 16. Reading the low byte as red instead swaps red and blue, which leaves
-    /// grey and green looking right and everything else wrong.
+    /// The game packs a waypoint colour as ARGB, with red in the high bytes. Every
+    /// path that makes a waypoint ends in <c>Color.ToArgb</c> or
+    /// <c>ColorUtil.Hex2Int</c>, and the game draws one by reading red back out of
+    /// bit 16. Reading the low byte as red swaps red and blue, which leaves grey
+    /// and green looking right and everything else wrong.
     /// </summary>
     public static string Hex(int color)
     {
@@ -112,11 +110,11 @@ public static class Markers
     }
 
     /// <summary>
-    /// The inverse: CSS back to what a waypoint stores. Opaque, because a
-    /// waypoint with no alpha is a waypoint drawn as nothing.
+    /// Converts CSS back to what a waypoint stores, always opaque. A waypoint with
+    /// no alpha draws as nothing.
     ///
-    /// Null for anything that is not six hex digits behind a hash. What arrives
-    /// here came from a browser, and a browser is not a thing whose word is taken.
+    /// Returns null for anything that is not six hex digits behind a hash, since
+    /// what arrives here came from a browser.
     /// </summary>
     public static int? Packed(string? css)
     {
@@ -134,15 +132,14 @@ public static class Markers
     }
 
     /// <summary>
-    /// The colours the game offers for a waypoint, in the order its own picker
-    /// shows them.
+    /// Returns the colours the game offers for a waypoint, in the order its own
+    /// picker shows them.
     ///
-    /// Read off the layer rather than written down here, so a mod that adds a
-    /// colour adds it to the web map's picker as well without anything knowing
-    /// about it in advance. The game ships three entries missing their hash,
-    /// which <c>Hex2Int</c> parses to some other colour entirely; they come back
-    /// as whatever the game itself would draw, because a picker that disagrees
-    /// with the game is worse than one that repeats its mistake.
+    /// Reads them off the layer rather than listing them here, so a mod that adds a
+    /// colour adds it to the web map's picker too. The game ships three entries
+    /// missing their hash, which <c>Hex2Int</c> parses to some other colour, and
+    /// these come back as whatever the game itself would draw. A picker that
+    /// disagrees with the game is worse than one that repeats its mistake.
     /// </summary>
     public static List<string> Palette(ICoreAPI api)
     {
@@ -166,19 +163,17 @@ public static class Markers
     }
 
     /// <summary>
-    /// Whether this person may change this marker.
+    /// Returns true when this player may change this marker.
     ///
-    /// Its owner always may. Anybody else may only where the operator has said
-    /// public markers are everyone's to correct, and only for a marker that is
-    /// in fact public — being shown something is not being handed it, and a
-    /// private marker is never anybody's but its owner's whatever the setting
-    /// says.
+    /// The owner always may. Anybody else may only where the operator set
+    /// <c>allow_editing_public_markers</c> and only for a marker that is in fact
+    /// public. A private marker is never anybody's but its owner's whatever the
+    /// setting says.
     ///
-    /// The page works the same question out for itself, to decide whether to
-    /// offer an edit at all. That answer is an affordance and this one is the
-    /// gate: what the page believes about who owns what came from a post that
-    /// may be a few seconds old, so the decision is taken again here against the
-    /// waypoint itself.
+    /// The page answers the same question to decide whether to offer an edit. That
+    /// answer is an affordance and this one is the gate. What the page believes
+    /// about who owns what came from a post that may be seconds old, so this
+    /// decides again against the waypoint itself.
     /// </summary>
     public static bool MayEdit(Waypoint waypoint, string uid, bool isPrivate, bool publicEditable)
     {
@@ -194,11 +189,11 @@ public static class Markers
     }
 
     /// <summary>
-    /// Who owns a marker, by name.
+    /// Returns the name of a marker's owner.
     ///
-    /// Offline owners are looked up in the player data, so a marker still says
-    /// whose it is when they are not on. Two places worked this out separately —
-    /// the web feed and the in-game share — and a name is a name whichever asks.
+    /// Looks an offline owner up in the player data, so a marker still says whose
+    /// it is when they are not on. The web feed and the in-game share both call
+    /// this.
     /// </summary>
     public static string OwnerName(ICoreServerAPI api, string? uid)
     {
@@ -212,7 +207,7 @@ public static class Markers
             ?? "";
     }
 
-    /// <summary>The waypoint with this guid, or null where there is none.</summary>
+    /// <summary>Returns the waypoint with this guid, or null when there is none.</summary>
     public static Waypoint? ByGuid(ICoreAPI api, string guid)
     {
         var waypoints = Layer(api)?.Waypoints;
@@ -232,16 +227,15 @@ public static class Markers
     }
 
     /// <summary>
-    /// Puts a player's whole set of waypoints on their client again.
+    /// Sends a player their whole set of waypoints again.
     ///
-    /// The layer sends a set rather than a waypoint, and the only thing it offers
-    /// for asking is the call it makes when somebody's map view moves — which is
-    /// what has happened, from the client's point of view, whenever this side has
-    /// changed one of theirs. An owner who is not online is sent nothing and
-    /// needs nothing: the layer resends on their next view change either way.
+    /// The layer sends a set rather than one waypoint, and the only call it offers
+    /// is the one it makes when a player's map view moves. From the client's point
+    /// of view that is what has happened whenever the server changed one of theirs.
+    /// An offline owner is sent nothing and needs nothing, since the layer resends
+    /// on their next view change.
     ///
-    /// Both the changing and the removing of a marker go through this, because
-    /// "make sure they see it" is one thing and had grown two answers.
+    /// Both changing and removing a marker go through this.
     /// </summary>
     public static void Resend(ICoreServerAPI api, string? ownerUid)
     {
@@ -256,10 +250,10 @@ public static class Markers
     }
 
     /// <summary>
-    /// Changes a waypoint that already exists, and makes sure its owner sees it.
+    /// Changes a waypoint that already exists and resends it to its owner.
     ///
-    /// The guid does not move, so nothing that knows this marker loses track of
-    /// it — which is what lets a browser recognise its own edit arriving.
+    /// Keeps the guid, so nothing that knows this marker loses track of it and a
+    /// browser recognises its own edit arriving.
     /// </summary>
     public static void Change(
         ICoreServerAPI api,
@@ -277,16 +271,15 @@ public static class Markers
     }
 
     /// <summary>
-    /// Takes a waypoint off the map, and off its owner's.
+    /// Removes a waypoint from the map and from its owner's. Returns true when
+    /// something was removed.
     ///
-    /// Only its owner may, whatever <c>public_markers_editable</c> says. That
+    /// Only the owner may, whatever <c>public_markers_editable</c> says. That
     /// setting lets somebody correct a marker they can see, which is not the same
-    /// permission as taking it off the map of the person who made it — and there
-    /// is no way back from this one.
+    /// permission as taking it off the map of the player who made it, and there is
+    /// no way back from a removal.
     ///
-    /// The decision about who could see it goes on the next save, which is where
-    /// the store already drops what no longer exists. Answers whether anything
-    /// was removed.
+    /// The next save drops the stored decision about who could see it.
     /// </summary>
     public static bool Remove(ICoreServerAPI api, Waypoint waypoint, string uid)
     {
@@ -306,19 +299,18 @@ public static class Markers
     }
 
     /// <summary>
-    /// Puts a new waypoint on the server's map and gives back what was made.
+    /// Adds a new waypoint to the server's map and returns it.
     ///
-    /// An owner who is online is told through the layer's own add, which resends
-    /// their set so it appears on the map they have open. One who is not is added
-    /// to the list directly: the layer resends a player's waypoints whenever their
-    /// map view changes, so it reaches them when they next look, and it is written
-    /// to the savegame with the rest either way.
-    ///
-    /// The guid is handed in rather than minted here. A marker asked for on the
-    /// web is named by the service before the game has heard of it, and the
-    /// browser watching for it to appear has only that name to match on — so the
-    /// name it was promised is the name it is made under.
+    /// Adds an online owner's through the layer's own add, which resends their set
+    /// so it appears on the map they have open. Adds an offline owner's to the list
+    /// directly, and the layer resends their waypoints on their next map view
+    /// change. Either way it is written to the savegame with the rest.
     /// </summary>
+    /// <param name="guid">
+    /// The guid to make the waypoint under. The service names a marker asked for on
+    /// the web before the game has heard of it, and the browser watching for it to
+    /// appear has only that name to match on.
+    /// </param>
     public static Waypoint? Make(
         ICoreServerAPI api,
         string guid,

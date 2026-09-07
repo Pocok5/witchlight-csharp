@@ -5,27 +5,23 @@ using Vintagestory.API.Common;
 namespace Witchlight;
 
 /// <summary>
-/// Running a piece of work, and never letting it out.
+/// Runs a piece of work and swallows any exception it throws.
 ///
-/// A game tick listener that throws does not merely fail that tick. The server
-/// records a listener as having run only after its handler returns — the store
-/// comes after the call, with nothing to catch in between — so a handler that
-/// throws leaves the listener permanently due and it fires again on the very next
-/// pass of the server loop. That turned one unready entity into a hundred
-/// thousand identical errors in four seconds, which is the server's own error
-/// threshold, and it shut itself down.
+/// The server records a tick listener as having run only after its handler
+/// returns. A handler that throws leaves the listener permanently due, so it
+/// fires again on the next pass of the server loop. One unready entity produced
+/// a hundred thousand identical errors in four seconds, which crossed the
+/// server's own error threshold and shut it down.
 ///
-/// Nothing this mod does is worth a server. Each kind of failure is reported once
-/// and then held quiet: the hundredth copy of a stack trace says nothing the
-/// first did not, and burying the log is its own kind of outage. A different
-/// exception from the same work is a different failure and is said.
+/// Each kind of failure is logged once and then held quiet. A different
+/// exception from the same work counts as a different failure and is logged.
 /// </summary>
 public sealed class Faults(ILogger log)
 {
-    /// <summary>Which failures have already been said, so none is said twice.</summary>
+    /// <summary>Holds the failures already logged, so none is logged twice.</summary>
     private readonly HashSet<string> _reported = new(StringComparer.Ordinal);
 
-    /// <summary>Runs the work, and swallows whatever comes out of it.</summary>
+    /// <summary>Runs the work and swallows any exception it throws.</summary>
     public void Doing(string what, Action work)
     {
         try

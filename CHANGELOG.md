@@ -13,6 +13,35 @@ While Witchlight is alpha, a format change **clears the map** on start rather th
 upgrading it. It rebuilds as players explore. Read the release note before
 upgrading a server whose map you would rather keep.
 
+## 0.52.1
+
+**Deploy note:** both halves, upgraded together; nothing is cleared. No setting,
+no packet and no stored file changes. This release only moves code and rewrites
+what it says about itself.
+
+- **The two hashes have one owner each.** FNV-1a was written twice, once over
+  UTF-8 bytes and once over UTF-16 chars, so the two disagreed for any text
+  outside ASCII. `Util/Fnv1a.cs` is the one implementation and it always hashes
+  UTF-8. `Crc32` moved from `Map/Regions.cs` to `Util/`, since a checksum is not
+  map geometry.
+- **A claim's allowance is read in one place.** `ClaimFeed` worked out what a
+  player may claim and `Claiming` worked it out again to enforce it, from the
+  same six role and player-data fields. Both now go through `Claims/Allowance.cs`,
+  so the number the web form shows is the number the mod holds a player to.
+- **Folders match what is in them.** `Web/` held one file that spoke no HTTP and
+  called only into `Markers/`; it is `Markers/PendingMarkers.cs`. The two
+  client-side shared-marker files moved to `Gui/`, which is now uniformly the
+  client-rendering folder and `Markers/` uniformly server-side.
+- **The settings file has one parser.** `Value`, `HasTable` and `Table` each
+  walked the file with their own copy of the comment and table rules; all three
+  now share one `Lines()` walker.
+- **Three save hooks became one.** Marker visibility, pins and origins were three
+  methods with one body and three `GameWorldSave` registrations, fetching the
+  waypoint layer three times per save. They are one method fetching it once.
+- **Comments state what the code does.** Doc comments are plain declarative
+  sentences. Descriptions of what the code used to be have been removed; measured
+  facts and design reasons stay.
+
 ## 0.51.1
 
 **Deploy note:** both halves, upgraded together; nothing is cleared.

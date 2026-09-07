@@ -7,25 +7,23 @@ using Vintagestory.API.Server;
 namespace Witchlight;
 
 /// <summary>
-/// One marker somebody asked for on the web map, made or changed.
+/// One marker somebody asked for on the web map, whether to make or to change.
 ///
-/// The same nine fields whichever it is: the form the person filled in holds all
-/// of a marker either way, and a patch of only what differs would need this end
-/// to work out what "differs" meant against a marker somebody else may have moved
-/// since. Two classes said this twice and would have drifted apart the first time
-/// a field was added to one of them.
+/// Carries the whole marker either way. The form holds all of it, and a patch of
+/// only what differs would make the mod work out what "differs" meant against a
+/// marker somebody else may have moved since.
 ///
-/// The key is minted by the service before the game has heard of the marker: the
-/// browser that asked has to recognise its own marker arriving among everyone
-/// else's, and a name agreed at the moment of asking is the only thing both ends
-/// can match on beforehand. The game makes the waypoint under that same name.
+/// The service mints the key before the game has heard of the marker, and the game
+/// makes the waypoint under that same key. The browser that asked has to recognise
+/// its own marker arriving among everyone else's, and a name agreed at the moment
+/// of asking is the only thing both ends can match on beforehand.
 /// </summary>
 public class Wanted
 {
     /// <summary>The guid the waypoint is, or will be, made under.</summary>
     public string Key { get; set; } = "";
 
-    /// <summary>Whose marker it is. The service took this from their session.</summary>
+    /// <summary>The uid of the marker's owner, taken from their session.</summary>
     public string Uid { get; set; } = "";
 
     public string Title { get; set; } = "";
@@ -35,71 +33,73 @@ public class Wanted
     public int Y { get; set; }
     public int Z { get; set; }
 
-    /// <summary>Whether its owner asked to keep it to themselves.</summary>
+    /// <summary>True when its owner asked to keep it to themselves.</summary>
     public bool Private { get; set; }
 
     /// <summary>
-    /// Which block this marker is about, where the map is saying so: the code of
-    /// the block it was put on, or the pattern of a preset it has been made to
-    /// look like. Empty is the ordinary case and means this side reads the world
-    /// under it instead. See <see cref="Origins"/>.
+    /// Which block this marker is about, where the map says so. Carries the code of
+    /// the block it was put on, or the pattern of a preset it has been made to look
+    /// like. Empty in the ordinary case, and the mod then reads the world under it.
+    /// See <see cref="Origins"/>.
     /// </summary>
     public string Block { get; set; } = "";
 
-    /// <summary>What the marker is about, or nothing said. Trimmed here so that
-    ///  whitespace and silence are the same answer.</summary>
+    /// <summary>The marker's description, or empty. Trimmed, so whitespace and
+    ///  silence are the same answer.</summary>
     public string About => Block.Trim();
 
-    /// <summary>Where the game should put it, in the middle of the block named.</summary>
+    /// <summary>Where the game puts it, in the middle of the block named.</summary>
     public Vec3d Position => new(X + 0.5, Y, Z + 0.5);
 
-    /// <summary>The colour as a waypoint stores it, or a fallback for one that
+    /// <summary>The colour as a waypoint stores it, falling back for anything that
     /// is not six hex digits behind a hash.</summary>
     public int Packed(int fallback) => Markers.Packed(Color) ?? fallback;
 
     /// <summary>The picture to draw it with, or the game's own default.</summary>
     public string Picture => Markers.Picture(Icon);
 
-    /// <summary>What the marker is called, or something rather than nothing.</summary>
+    /// <summary>The marker's name, falling back to the game's word for an unnamed
+    ///  waypoint.</summary>
     public string Named => Markers.Title(Title);
 }
 
 /// <summary>
-/// One marker somebody asked to be taken away.
+/// One marker somebody asked to be removed.
 ///
-/// A key and whose ask it was, and nothing else: a removal names a waypoint
-/// rather than describing one, and the waypoint itself is what this side reads
-/// before removing anything.
+/// Carries a key and who asked, and nothing else. A removal names a waypoint
+/// rather than describing one, and the mod reads the waypoint itself before
+/// removing anything.
 /// </summary>
 public class Unwanted
 {
-    /// <summary>The guid of the waypoint to take away.</summary>
+    /// <summary>The guid of the waypoint to remove.</summary>
     public string Key { get; set; } = "";
 
-    /// <summary>Who asked. The service took this from their session.</summary>
+    /// <summary>The uid of the player who asked, taken from their session.</summary>
     public string Uid { get; set; } = "";
 }
 
 /// <summary>
-/// One marker somebody asked to keep in sight, or to stop keeping.
+/// One marker somebody asked to pin, or to unpin.
 ///
-/// A key, whose ask it was, and which way. Nothing about the marker itself: a pin
-/// names a waypoint rather than describing one, and it changes nothing about the
-/// marker — it changes what one person's own map shows. See <see cref="Pins"/>.
+/// Carries a key, who asked, and which way. Nothing about the marker itself, since
+/// a pin changes what one player's own map shows rather than the marker. See
+/// <see cref="Pins"/>.
 /// </summary>
 public class Pinning
 {
-    /// <summary>The guid of the waypoint to keep in sight.</summary>
+    /// <summary>The guid of the waypoint to pin.</summary>
     public string Key { get; set; } = "";
 
-    /// <summary>Whose map it is for. The service took this from their session.</summary>
+    /// <summary>The uid of the player whose map it is for, taken from their
+    ///  session.</summary>
     public string Uid { get; set; } = "";
 
-    /// <summary>Whether they are keeping it in sight or no longer are.</summary>
+    /// <summary>True to pin it, false to unpin it.</summary>
     public bool On { get; set; }
 }
 
-/// <summary>Everything about markers the service was holding.</summary>
+/// <summary>The marker requests the service was holding.</summary>
 public class AskedMarkers
 {
     public List<Wanted> Make { get; set; } = new();
@@ -112,16 +112,11 @@ public class AskedMarkers
 }
 
 /// <summary>
-/// Everything the service was holding when the mod last asked.
+/// Everything the service was holding when the mod last collected.
 ///
-/// Two kinds of thing in one envelope because they share the one thing that
-/// empties it: the mod collects on the tick that already posts positions, and a
-/// second queue would be a second round trip every two seconds to find out that
-/// nothing was in it.
-///
-/// One group per kind, because the two kinds answer the same three verbs. Flat,
-/// this had grown a `Claims` beside a `Make` that only meant markers, which is
-/// the shape a third kind of thing would have made worse.
+/// Carries markers and claims in one envelope, grouped by kind. The mod collects
+/// on the tick that already posts positions, and a second queue would be a second
+/// round trip every two seconds to find nothing in it.
 /// </summary>
 public class Asked
 {
@@ -129,40 +124,39 @@ public class Asked
     public AskedClaims Claims { get; set; } = new();
 }
 
-/// <summary>How much of each kind of ask landed. Its own type rather than loose
-///  numbers, because the caller says all of them out loud.</summary>
+/// <summary>How many requests of each kind landed. The caller logs all of them.</summary>
 public readonly record struct Landed(
     int Made, int Changed, int Removed, int Pinned, Claimed Claims)
 {
-    /// <summary>Whether anything happened at all.</summary>
+    /// <summary>True when anything at all landed.</summary>
     public bool Anything => AnyMarkers || Claims.Anything;
 
-    /// <summary>Whether any of it was a marker, which is what has to be shared
+    /// <summary>True when a marker landed, which means the feed has to be shared
     ///  again. A claim the game has taken tells every client itself.</summary>
     public bool AnyMarkers => Made > 0 || Changed > 0 || Removed > 0 || Pinned > 0;
 }
 
 /// <summary>
-/// What was asked for on the web, and the doing of it.
+/// Applies what players asked for on the web map.
 ///
-/// The service cannot reach the game — the channel between the two halves only
-/// runs one way, from the mod that started the service to the service it started.
-/// So a marker somebody types into the web form is not sent to the game; it waits
-/// in the service until the mod asks, which it does on the tick that already
-/// posts positions. What arrives here has already been checked by the service and
-/// is checked again, because a waypoint that will not draw is worse on the game's
-/// map than a form that refused.
+/// The channel between the halves runs one way, from the mod that started the
+/// service to the service it started, so the service cannot push a marker at the
+/// game. A marker typed into the web form waits in the service until the mod
+/// collects it on the tick that already posts positions.
+///
+/// The service has already checked what arrives here, and this checks it again. A
+/// waypoint that will not draw is worse on the game's map than a form that
+/// refused.
 /// </summary>
 public static class Pending
 {
     /// <summary>
-    /// Does everything in the service's reply — the markers made, changed and
-    /// removed, and the land claims drawn — and gives back how many of each
+    /// Applies everything in the service's reply: the markers made, changed,
+    /// removed and pinned, and the land claims drawn. Returns how many of each
     /// landed.
     ///
-    /// The claims are handed straight to <see cref="Claiming"/>, which owns every
-    /// rule about whether one may exist. Nothing about a claim is decided here;
-    /// this is the envelope and the counting.
+    /// Hands the claims straight to <see cref="Claiming"/>, which owns every rule
+    /// about whether one may exist. This method is the envelope and the counting.
     /// </summary>
     public static Landed Apply(
         ICoreServerAPI api, Visibility visibility, Pins pins, Origins origins, string? json)
@@ -197,15 +191,13 @@ public static class Pending
     }
 
     /// <summary>
-    /// Markers somebody asked to keep in sight on their own map, and ones they
-    /// asked to stop keeping.
+    /// Applies the markers somebody asked to pin or unpin.
     ///
-    /// Whether they may is whether they may *see* it, which is a lower bar than
-    /// changing one and deliberately so: a pin puts a marker on the pinner's map
-    /// and on nobody else's, so anybody the marker is shared with may keep it in
-    /// sight. Their own is always theirs. Decided here against the waypoint
-    /// itself, because what the service believes about who owns what came from a
-    /// post that is seconds old.
+    /// Requires only that the player may see the marker, which is a lower bar than
+    /// changing one. A pin puts a marker on the pinner's map and on nobody else's,
+    /// so anybody the marker is shared with may pin it, and a player's own is
+    /// always theirs. Decides against the waypoint itself, because what the service
+    /// believes about who owns what came from a post that is seconds old.
     /// </summary>
     private static int Kept(
         ICoreServerAPI api, Visibility visibility, Pins pins, List<Pinning> asked)
@@ -243,12 +235,12 @@ public static class Pending
     }
 
     /// <summary>
-    /// Markers somebody asked to be taken away.
+    /// Applies the markers somebody asked to remove.
     ///
-    /// Whether they may is decided here and only here, against the waypoint
-    /// itself, and only its owner ever may — see <see cref="Markers.Remove"/>.
-    /// A marker that is already gone is not a failure worth a line in the log:
-    /// two browsers open on one marker is two asks for the same removal.
+    /// <see cref="Markers.Remove"/> decides whether they may, against the waypoint
+    /// itself, and only the owner ever may. A marker that is already gone is not
+    /// logged as a failure, since two browsers open on one marker send the same
+    /// removal twice.
     /// </summary>
     private static int Removed(ICoreServerAPI api, List<Unwanted> asked)
     {
@@ -278,7 +270,8 @@ public static class Pending
         return removed;
     }
 
-    /// <summary>New markers, each owned by whoever the service says asked for it.</summary>
+    /// <summary>Makes the new markers, each owned by whoever the service says asked
+    ///  for it.</summary>
     private static int Made(
         ICoreServerAPI api, Visibility visibility, Origins origins, List<Wanted> asked)
     {
@@ -306,9 +299,9 @@ public static class Pending
                 continue;
             }
 
-            // Recorded whichever way it went. The operator's setting is the
-            // fallback for a marker nobody decided about, and somebody filling in
-            // this form decided — including when they decided to agree with it.
+            // Record the choice whichever way it went. The operator's setting is
+            // the fallback for a marker nobody decided about, and somebody filling
+            // in this form decided, including by agreeing with it.
             visibility.Choose(waypoint.Guid, wanted.Private);
             origins.Made(waypoint.Guid, About(api, wanted));
             made++;
@@ -318,12 +311,12 @@ public static class Pending
     }
 
     /// <summary>
-    /// Changes to markers that already exist.
+    /// Applies the changes to markers that already exist.
     ///
-    /// Whether somebody may is decided here rather than taken from the service.
-    /// The service knows who owns what only from the mod's last post, which is
-    /// seconds old and says nothing about a marker made or given away since; the
-    /// waypoint itself is the only thing that knows now.
+    /// Decides whether somebody may here rather than taking the service's word. The
+    /// service knows who owns what only from the mod's last post, which is seconds
+    /// old and says nothing about a marker made or given away since. The waypoint
+    /// itself is the only thing that knows now.
     /// </summary>
     private static int Changed(
         ICoreServerAPI api, Visibility visibility, Origins origins, List<Wanted> asked)
@@ -359,9 +352,9 @@ public static class Pending
 
             origins.Made(waypoint.Guid, About(api, edit));
 
-            // Somebody who may change a marker may change who sees it. On a
-            // marker they do not own that is only ever public to public, since
-            // making it private would be taking it away from its owner's map.
+            // Somebody who may change a marker may change who sees it. On a marker
+            // they do not own that only ever goes public to public, since making it
+            // private would take it off its owner's map.
             if (waypoint.OwningPlayerUid == edit.Uid)
             {
                 visibility.Choose(waypoint.Guid, edit.Private);
@@ -373,17 +366,17 @@ public static class Pending
     }
 
     /// <summary>
-    /// Which block a marker is about: what the ask says, or failing that what is
+    /// Returns which block a marker is about: what the request says, or what is
     /// actually there.
     ///
-    /// The map says so when it knows — the block under a right click, or the
-    /// pattern of a preset a screenful of markers has just been made to look
-    /// like, which is a thing only that side can know. It is silent otherwise,
-    /// and then this side reads the world, which is the only half that can.
+    /// The map names the block when it knows one, either from a right click or from
+    /// the pattern of a preset a screenful of markers was made to look like. Only
+    /// the map can know the second. Where the request is silent the mod reads the
+    /// world, which only the mod can do.
     ///
-    /// Nothing rests on the answer but which preset the map offers for this
-    /// marker, so a page saying something odd costs a page its own presets. What
-    /// it must not do is *lose* an answer: silence means read, not forget.
+    /// Only which preset the map offers for this marker rests on the answer, so a
+    /// page naming something odd costs that page its own presets. Silence must mean
+    /// read rather than forget.
     /// </summary>
     private static string About(ICoreServerAPI api, Wanted wanted)
     {
@@ -392,8 +385,8 @@ public static class Pending
     }
 
     /// <summary>
-    /// Whether this is a marker the game can be asked to make. A key and an owner
-    /// are the two things nothing downstream can invent.
+    /// Returns true when this is a marker the game can be asked to make. Nothing
+    /// downstream can invent a key or an owner.
     /// </summary>
     private static bool Sound(ICoreServerAPI api, Wanted wanted)
     {

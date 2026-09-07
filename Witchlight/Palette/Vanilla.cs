@@ -9,52 +9,50 @@ using Vintagestory.API.Config;
 namespace Witchlight;
 
 /// <summary>
-/// The base game's colours, recorded once and carried inside this assembly.
+/// Supplies the base game's colours, recorded once and carried inside this
+/// assembly.
 ///
-/// A dedicated server's install ships almost no block textures — 46 files against
-/// a full game's 9,587 — so the palette it builds for itself colours nearly
-/// nothing, and every such server drew a flat map from the moment it came up
-/// until a player happened to join with this mod on. That wait is the whole
-/// reason <see cref="PaletteExchange"/> exists, and for a server running the base
-/// game it was a wait for information nobody needed to send: the base game's
-/// blocks look the same on every server there is.
+/// A dedicated server's install ships 46 block texture files against a full
+/// game's 9,587, so the palette it builds for itself colours nearly nothing.
+/// Such a server drew a flat map from the moment it came up until a player
+/// joined with this mod on. That wait is why <see cref="PaletteExchange"/>
+/// exists, and for a server running the base game it was a wait for information
+/// nobody needed to send, because the base game's blocks look the same on every
+/// server.
 ///
-/// So they are recorded. The map is fully coloured before the first player
-/// arrives, the asking is left for what is genuinely unknowable from here — a
-/// mod's blocks, and a texture pack an admin has chosen — and a fresh server's
-/// first render is the finished picture rather than the outline of one.
+/// Recording them colours the map fully before the first player arrives. The
+/// asking is left for what this side cannot know: a mod's blocks, and a texture
+/// pack an admin has chosen.
 ///
-/// **Keyed by code and nothing else.** A block id is assigned per world and says
-/// nothing on another server, so the recording carries none and every entry is
-/// given this world's id as it is read. A code this server has never heard of is
-/// dropped; a colour it already has is left alone. See
-/// <see cref="Palette.Merge"/> for the second rule, which is the general one.
+/// The recording is keyed by code and nothing else. A block id is assigned per
+/// world and means nothing on another server, so the recording carries none and
+/// every entry takes this world's id as it is read. A code this server has never
+/// heard of is dropped, and a colour it already has is left alone. See
+/// <see cref="Palette.Merge"/> for the general form of that second rule.
 ///
-/// Refreshed by `bake-palette.py` in this repository, which records a real
-/// palette.json rather than deriving one: working out a block's colour takes the
-/// game's own assets, and a second implementation of that rule here would drift
-/// from <see cref="PaletteBuilder"/> the week it was written.
+/// `bake-palette.py` in this repository refreshes the recording. It records a
+/// real palette.json rather than deriving one, because working out a block's
+/// colour takes the game's own assets and a second implementation here would
+/// drift from <see cref="PaletteBuilder"/>.
 /// </summary>
 public static class Vanilla
 {
     /// <summary>
-    /// The recording, as the compiler names it: the root namespace, then the
-    /// path to the file with its separators turned into dots.
+    /// The recording's resource name, as the compiler builds it: the root
+    /// namespace, then the path to the file with its separators turned into dots.
     /// </summary>
     private const string Resource = "Witchlight.Palette.vanilla.json.gz";
 
-    /// <summary>What was read out of the assembly, and whether reading was tried.</summary>
+    /// <summary>Holds what was read out of the assembly, and whether reading was tried.</summary>
     private static Palette? _recorded;
     private static bool _read;
 
     /// <summary>
-    /// Fills what this palette has no colour for, from the recording.
-    /// Gives back how many colours it supplied.
+    /// Fills what this palette has no colour for from the recording. Returns how
+    /// many colours it supplied.
     ///
-    /// The palette is changed in place rather than a merged copy being handed
-    /// back, because the count is the interesting part and a caller that has to
-    /// both take a new palette and be told a number will sooner or later take one
-    /// and ignore the other.
+    /// This changes the palette in place rather than returning a merged copy, so
+    /// a caller cannot take the count and drop the palette.
     /// </summary>
     public static int Fill(ICoreAPI api, Palette palette)
     {
@@ -66,27 +64,25 @@ public static class Vanilla
         var filled = 0;
         foreach (var (code, entry) in recorded.Blocks)
         {
-            // Only what this palette is actually missing. A colour built from
-            // this server's own assets is this server's own answer and is not
-            // overwritten by a recording of somebody else's.
+            // Fill only what this palette is missing. A colour built from this
+            // server's own assets is this server's answer and is not overwritten.
             //
-            // What is *not* honoured is this server calling a block invisible.
-            // That judgement is `no textures to try, and the shape gave nothing
-            // either`, which is only trustworthy where the textures were there
-            // to try: on a dedicated server they are not, and 1,202 blocks that
-            // plainly draw — beds, banners, bamboo, barrel cactus — come out of
-            // its own build labelled as drawing nothing. Honouring that label
-            // costs the recording exactly the blocks it exists to supply. The
-            // one block whose invisibility is known for certain is settled
-            // before any of this, from what the game says it draws — see
-            // `PaletteBuilder` and `EnumDrawType.Empty`.
+            // This server calling a block invisible is not honoured. That
+            // judgement means no textures were there to try and the shape gave
+            // nothing either, which is only trustworthy where the textures
+            // existed. On a dedicated server they do not, and 1,202 blocks that
+            // plainly draw, including beds, banners, bamboo and barrel cactus,
+            // come out of its own build labelled as drawing nothing. Honouring
+            // that label would skip exactly the blocks this recording supplies.
+            // A block the game itself reports as drawing nothing is settled
+            // earlier. See `PaletteBuilder` and `EnumDrawType.Empty`.
             if (palette.Blocks.TryGetValue(code, out var held) && held.Rgb is not null)
             {
                 continue;
             }
 
             // The recording carries no ids, so a block this server does not have
-            // is one this cannot say anything about and is not invented.
+            // gets no entry.
             if (api.World.GetBlock(new AssetLocation(code)) is not { } block)
             {
                 continue;
@@ -110,17 +106,15 @@ public static class Vanilla
         return filled;
     }
 
-    /// <summary>Which game version the recording was made against.</summary>
+    /// <summary>Returns the game version the recording was made against.</summary>
     public static string RecordedFor(ILogger log) => Read(log)?.GameVersion ?? "";
 
     /// <summary>
-    /// Says what the recording did, and where it is worth doubting.
+    /// Logs what the recording supplied, and warns where it is worth doubting.
     ///
-    /// Its own line because a server whose map is coloured wants to know which
-    /// of the two ways that happened, and because a recording made against
-    /// another game version is the one case where these colours can be wrong in
-    /// a way nothing else here would notice: block codes outlive releases and
-    /// the textures under them do not.
+    /// A recording made against another game version is the one case where these
+    /// colours can be wrong without anything else here noticing, because block
+    /// codes outlive releases and the textures under them do not.
     /// </summary>
     public static void Report(ICoreAPI api, int filled)
     {
@@ -144,9 +138,9 @@ public static class Vanilla
     /// <summary>
     /// Reads the recording out of this assembly, once.
     ///
-    /// A recording that will not read is a mod that was packaged wrong, and it
-    /// costs a flat map on a dedicated server rather than anything worse — so it
-    /// is said out loud and everything carries on without it.
+    /// A recording that will not read means the mod was packaged wrong. It costs
+    /// a flat map on a dedicated server and nothing worse, so this logs a warning
+    /// and carries on without it.
     /// </summary>
     private static Palette? Read(ILogger log)
     {

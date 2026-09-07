@@ -3,37 +3,33 @@ using Vintagestory.API.Common;
 namespace Witchlight;
 
 /// <summary>
-/// What this mod's commands are called, and how one is declared.
+/// Names this mod's commands and declares them.
 ///
-/// A long name that is always there and a short one that is there when nothing
-/// else has claimed it. Both sides register the same pair, so what a player types
-/// reads the same whether the command runs on their own machine or the server's —
-/// only the prefix differs, and that is the game's way of saying which side is
-/// answering.
+/// Registers a long name that is always there and a short name that is there when
+/// nothing else has claimed it. Both sides register the same pair, so what a player
+/// types reads the same whether the command runs on their own machine or the
+/// server's. Only the game's prefix differs, which says which side answers.
 /// </summary>
 public static class Commands
 {
     /// <summary>The name the command tree is registered under.</summary>
     public const string Name = "witchlight";
 
-    /// <summary>The short name, for anyone typing it more than once.</summary>
+    /// <summary>The short name.</summary>
     public const string Short = "wl";
 
     /// <summary>
-    /// Gives a command its short name, unless something already answers to it.
+    /// Gives a command its short name, unless another mod already holds it.
     ///
-    /// The game's own <c>WithAlias</c> writes straight into the command table
-    /// without looking first, so a name another mod holds would be taken from it
-    /// silently, leaving a mod broken and nothing anywhere saying where its
-    /// command went. Two letters is common ground and worth asking about before
-    /// claiming.
+    /// The game's <c>WithAlias</c> writes straight into the command table without
+    /// looking, so it would take a name another mod holds and leave that mod broken
+    /// with nothing saying where its command went.
     ///
-    /// Losing the race costs nothing but keystrokes: the long name is registered
-    /// either way, and it is the one every piece of documentation gives.
+    /// Losing the name costs only keystrokes, since the long name is registered
+    /// either way and is the one the documentation gives.
     ///
-    /// Asked of each side separately, because the game keeps a command table per
-    /// side — the short name can be free on a server and taken on the client
-    /// connecting to it.
+    /// Checks each side separately. The game keeps a command table per side, so the
+    /// short name can be free on a server and taken on a client connecting to it.
     /// </summary>
     public static IChatCommand WithShortName(this IChatCommand command, ICoreAPI api)
     {
@@ -51,11 +47,9 @@ public static class Commands
     /// <summary>
     /// Opens a subcommand under the privilege the settings give it.
     ///
-    /// The name is what the settings key it by, so it is written once and both
-    /// the game's command table and <see cref="Permissions"/> are handed the same
-    /// string. Written twice, they drift the moment one of them is renamed — and
-    /// a command registered under a permission nobody configured is a command
-    /// whose setting silently does nothing.
+    /// Takes the name once and hands the same string to the game's command table
+    /// and to <see cref="Permissions"/>, which key on it. A command registered
+    /// under a permission nobody configured has a setting that does nothing.
     /// </summary>
     public static IChatCommand BeginSubCommand(
         this IChatCommand tree, string name, string description) =>

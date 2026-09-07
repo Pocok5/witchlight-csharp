@@ -5,29 +5,28 @@ using Vintagestory.API.Server;
 namespace Witchlight;
 
 /// <summary>
-/// Filling a fresh map without holding up the world.
+/// Fills a fresh map by loading the chunk columns around spawn, a few at a time.
 ///
 /// A server with nobody on it keeps almost nothing in memory, so an export of
-/// what happens to be loaded is a single chunk. Asking for the square around
+/// what happens to be loaded covers a single chunk. Loading the square around
 /// spawn gives a fresh server a map without waiting for someone to walk the
-/// world; everything players do explore is picked up by the export timer.
+/// world. The export timer picks up everything players explore afterwards.
 ///
-/// Asked for a few columns at a time rather than all at once. The rectangle form
-/// of <c>LoadChunkColumnPriority</c> is documented as asynchronous and is not:
-/// the server puts the rectangle on a queue that its chunk thread drains with
+/// The columns are requested a few at a time. The rectangle form of
+/// <c>LoadChunkColumnPriority</c> is documented as asynchronous but is not. The
+/// server puts the rectangle on a queue that its chunk thread drains with
 /// <c>loadChunkAreaBlocking</c>, which holds that thread until the whole area is
-/// generated or twelve seconds have passed. On a dedicated server starting up
-/// that is nobody's problem. In singleplayer the player joins in the same tick
-/// with a view distance of 1152 blocks, and the thousands of columns they ask
-/// for pile up behind the seed until the server's request queue overflows — at
-/// which point it clears the queue out from under its own chunk thread and dies
-/// with "In queue but missed from index!".
+/// generated or twelve seconds have passed. A dedicated server starting up
+/// tolerates that. In singleplayer the player joins in the same tick with a view
+/// distance of 1152 blocks, and the thousands of columns they request pile up
+/// behind the seed until the server's request queue overflows. The server then
+/// clears the queue out from under its own chunk thread and dies with
+/// "In queue but missed from index!".
 ///
-/// One column at a time is one short blocking load each, with the thread free
-/// between them. Columns already in memory cost nothing at all: the server
-/// answers those without queueing anything, which is most of them in
-/// singleplayer, where the player's own view distance covers this square several
-/// times over.
+/// One column at a time costs one short blocking load each, with the thread free
+/// between them. Columns already in memory cost nothing, because the server
+/// answers those without queueing. In singleplayer that covers most of them,
+/// since the player's view distance spans this square several times over.
 /// </summary>
 public sealed class Seeding
 {
@@ -36,7 +35,7 @@ public sealed class Seeding
     private readonly Action<string> _export;
     private readonly int _asked;
 
-    /// <summary>How many columns have been asked for since the last export.</summary>
+    /// <summary>Counts the columns requested since the last export.</summary>
     private int _since;
 
     private Seeding(ICoreServerAPI api, Queue<(int X, int Z)> left, Action<string> export)
@@ -48,8 +47,8 @@ public sealed class Seeding
     }
 
     /// <summary>
-    /// A seed of the square around spawn, or nothing where the world has no
-    /// spawn point to centre it on.
+    /// Creates a seed of the square around spawn. Returns null where the world
+    /// has no spawn point to centre it on.
     /// </summary>
     public static Seeding? Around(ICoreServerAPI api, int radius, Action<string> export)
     {
@@ -71,12 +70,11 @@ public sealed class Seeding
     }
 
     /// <summary>
-    /// The columns of a square, nearest the middle first.
+    /// Yields the columns of a square, nearest the middle first.
     ///
-    /// Ring by ring rather than row by row, because the map is now filled in over
-    /// a span somebody can watch: outward from spawn is a map growing, where row
-    /// by row is a band creeping across the screen. It also means a seed cut short
-    /// by a shutdown leaves a map centred on spawn rather than half a one.
+    /// The order is ring by ring rather than row by row. A watcher sees the map
+    /// grow outward from spawn, and a seed cut short by a shutdown leaves a map
+    /// centred on spawn rather than half a square.
     /// </summary>
     public static IEnumerable<(int X, int Z)> Outward(int centreX, int centreZ, int radius)
     {
@@ -88,7 +86,7 @@ public sealed class Seeding
                 yield return (x, centreZ - ring);
                 yield return (x, centreZ + ring);
             }
-            // The corners belong to the rows above and are not repeated here.
+            // The rows above already yielded the corners.
             for (var z = centreZ - ring + 1; z <= centreZ + ring - 1; z++)
             {
                 yield return (centreX - ring, z);
@@ -97,16 +95,16 @@ public sealed class Seeding
         }
     }
 
-    /// <summary>How much of the seed is still to ask for.</summary>
+    /// <summary>Describes how far the seed has got.</summary>
     public string Describe() => $"seeding: {_asked - _left.Count} of {_asked} columns asked for";
 
     /// <summary>
-    /// Asks for the next few columns, and says whether there are any more.
+    /// Requests the next few columns. Returns true while more remain.
     ///
-    /// The map is written as the seed goes rather than only at the end. A column
-    /// the server loaded and nobody is standing near is freed again after fifteen
-    /// seconds, which is less time than a seed of any size takes — so a single
-    /// export at the end would find the earliest columns already gone.
+    /// The map is written as the seed runs rather than only at the end. The
+    /// server frees a loaded column nobody stands near after fifteen seconds,
+    /// which is less time than a seed of any size takes, so a single export at
+    /// the end would find the earliest columns gone.
     /// </summary>
     public bool Step()
     {
@@ -128,10 +126,10 @@ public sealed class Seeding
 
 
     /// <summary>
-    /// How often the map is written while the seed runs.
-    ///
-    /// Well inside the fifteen seconds an idle column stays in memory, and far
-    /// enough apart that a seed is a handful of writes rather than one per column.
+    /// Sets how many columns are requested between exports while the seed runs.
+    /// This falls well inside the fifteen seconds an idle column stays in memory,
+    /// and far enough apart that a seed costs a handful of writes rather than one
+    /// per column.
     /// </summary>
     private const int ColumnsPerExport = 64;
 

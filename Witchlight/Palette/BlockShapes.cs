@@ -5,34 +5,33 @@ using Vintagestory.API.Common;
 namespace Witchlight;
 
 /// <summary>
-/// What a block's shape file says about how it looks.
+/// Reads what a block's shape file says about how it looks.
 ///
-/// A fern has no `textures` block at all: it is a shape, and the shape file names
-/// the textures and carries the colour maps that tint them. Without reading it
-/// those blocks have no colour and no tint, and the map shows a grey hole
-/// wherever one grows.
+/// A fern has no `textures` block. It is a shape, and the shape file names the
+/// textures and carries the colour maps that tint them. Without reading it those
+/// blocks have no colour and no tint, and the map shows a grey hole wherever one
+/// grows.
 ///
-/// Two answers come out of one read, so they are asked of one place: the average
-/// colour of everything the shape draws with, and the tint its elements declare.
-/// Both are kept per shape, because a shape is shared by every variant of a block
-/// and a growth stage is not a different plant.
+/// One read answers two questions: the average colour of everything the shape
+/// draws with, and the tint its elements declare. Both are cached per shape,
+/// because every variant of a block shares one shape.
 /// </summary>
 public static class BlockShapes
 {
-    /// <summary>Starts a fresh build, keeping nothing from the last one.</summary>
+    /// <summary>Clears the cached tints so the next build starts fresh.</summary>
     public static void Forget() => Tints.Clear();
 
     /// <summary>
-    /// The average colour of every texture this block's shape uses, and how much
-    /// of the square they cover. Nothing where it has no shape, or the shape
-    /// names nothing that loads.
+    /// Returns the average colour of every texture this block's shape uses, and
+    /// how much of the square they cover. Returns nothing where the block has no
+    /// shape, or the shape names nothing that loads.
     ///
-    /// The coverage travels because a shape is no longer only the last resort. A
-    /// block declaring a texture that covers three per cent of it — a reed's two
-    /// seed heads, with the whole plant in the shape file — used to be coloured
-    /// from that texture and the shape never asked, which made every reed bed the
-    /// colour of a seed head. Both are candidates now, and what covers more of
-    /// the block is what stands for it.
+    /// The coverage travels with the colour because the caller weighs the shape
+    /// against the block's own textures. A reed declares a texture covering three
+    /// per cent of the block, its two seed heads, with the whole plant in the
+    /// shape file. Colouring from that texture alone made every reed bed the
+    /// colour of a seed head. Whichever candidate covers more of the block now
+    /// stands for it.
     /// </summary>
     public static TextureColours.Paint AverageColour(ICoreAPI api, Block block)
     {
@@ -43,11 +42,12 @@ public static class BlockShapes
     }
 
     /// <summary>
-    /// The tint a block's shape declares, for a block that declares none itself.
+    /// Returns the tint a block's shape declares, for a block that declares none
+    /// itself.
     ///
-    /// Only ever known for a shape that has already been decoded, which is the
-    /// order the palette builds in: a block with no textures of its own is read
-    /// through its shape, and that read is what fills this in.
+    /// This answers only for a shape already decoded, which is the order the
+    /// palette builds in. A block with no textures of its own is read through its
+    /// shape, and that read fills this cache.
     /// </summary>
     public static (string? Climate, string? Season) TintOf(Block block)
     {
@@ -55,7 +55,7 @@ public static class BlockShapes
         return shape is not null && Tints.TryGetValue(shape, out var tint) ? tint : (null, null);
     }
 
-    /// <summary>Tints found in shape files, by shape path.</summary>
+    /// <summary>Holds tints found in shape files, keyed by shape path.</summary>
     private static readonly Dictionary<string, (string? Climate, string? Season)> Tints = new();
 
     private static TextureColours.Paint Decode(ICoreAPI api, AssetLocation shape)
@@ -96,8 +96,8 @@ public static class BlockShapes
                     continue;
                 }
 
-                // And a shared shape stands its own textures in for the block's.
-                // `block/basic/cube` says `all: unknown` — see
+                // A shared shape substitutes its own textures for the block's.
+                // `block/basic/cube` says `all: unknown`. See
                 // `TextureColours.Placeholder`, which owns that rule for the
                 // block's own textures as well as for a shape's.
                 if (TextureColours.Placeholder(texture))
@@ -108,7 +108,7 @@ public static class BlockShapes
                 average.AddAll(api, new AssetLocation(shape.Domain, texture));
             }
 
-            // One variant is enough: they differ in arrangement, not colour.
+            // One variant is enough. Variants differ in arrangement, not colour.
             if (average.Any)
             {
                 break;
@@ -120,13 +120,13 @@ public static class BlockShapes
             : TextureColours.Paint.None;
     }
 
-    /// <summary>A shape file that names none, so the loop below has nothing to walk.</summary>
+    /// <summary>An empty collection, so the loop below has nothing to walk.</summary>
     private static readonly Dictionary<string, string>.ValueCollection NoTextures =
         new Dictionary<string, string>().Values;
 
     /// <summary>
-    /// The parts of a shape file this needs: its textures, and the colour maps
-    /// its elements are tinted by.
+    /// Holds the parts of a shape file this needs: its textures, and the colour
+    /// maps its elements are tinted by.
     /// </summary>
     private class ShapeFile
     {
@@ -142,9 +142,9 @@ public static class BlockShapes
     }
 
     /// <summary>
-    /// The first tint declared anywhere in a shape's element tree. A fern keeps
-    /// its colour maps on the child elements that make up each frond, not on the
-    /// element at the top.
+    /// Returns the first tint declared anywhere in a shape's element tree. A fern
+    /// keeps its colour maps on the child elements that make up each frond rather
+    /// than on the top element.
     /// </summary>
     private static (string? Climate, string? Season) FirstTint(List<Element>? elements, int depth = 0)
     {
@@ -170,6 +170,6 @@ public static class BlockShapes
         return (null, null);
     }
 
-    /// <summary>How far down a shape's elements to look before giving up.</summary>
+    /// <summary>Sets how far down a shape's elements to look before giving up.</summary>
     private const int MaxDepth = 8;
 }

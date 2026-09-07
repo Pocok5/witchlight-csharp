@@ -9,35 +9,31 @@ using Vintagestory.API.Server;
 namespace Witchlight;
 
 /// <summary>
-/// The map service binary that rides along in the mod archive.
+/// Extracts the map service binary from the mod archive.
 ///
-/// The service is a separate program and stays one: it knows pixels and the mod
-/// knows the game, and a map worth keeping outlives any single game server. What
-/// it does not need to be is a second thing to install. So the binary travels
-/// inside the mod and is written out where it can be run.
-///
-/// Getting it out of the archive is all this does. Running it is
-/// <see cref="ServiceProcess"/>.
+/// The service is a separate program. The binary travels inside the mod so it is
+/// not a second thing to install, and this class writes it out where it can be
+/// run. <see cref="ServiceProcess"/> runs it.
 /// </summary>
 public static class BundledService
 {
-    /// <summary>Where the binary sits inside the mod archive.</summary>
+    /// <summary>The path of the binary inside the mod archive.</summary>
     private const string BundledAt = "service/linux-x64/witchlight";
 
-    /// <summary>What it is called once unpacked, and in the log.</summary>
+    /// <summary>The name of the unpacked binary.</summary>
     private const string Name = "witchlight";
 
     /// <summary>
-    /// Writes the bundled service out where it can be run, once per version.
+    /// Writes the bundled service out where it can be run, once per version, and
+    /// returns its path.
     ///
-    /// Null where this machine has no service to run — a platform nothing was
-    /// bundled for, an archive packaged without one — which is said out loud
-    /// rather than left to be noticed.
+    /// Returns null and logs when this machine has no service to run, either
+    /// because nothing was bundled for this platform or because the archive was
+    /// packaged without one.
     ///
-    /// The archive is the only copy that matters, so the unpacked one is thrown
-    /// away and written again whenever the archive is newer — which is what
-    /// upgrading the mod does, and is the difference between running the service
-    /// that came with this build and the one that came with the last.
+    /// Rewrites the unpacked copy whenever the archive is newer, which is what
+    /// upgrading the mod does. That is how the running service stays the one that
+    /// came with this build.
     /// </summary>
     public static string? Unpack(ICoreServerAPI api, Mod mod)
     {
@@ -57,8 +53,8 @@ public static class BundledService
 
         try
         {
-            // A mod loaded from a folder is how it is developed; from an archive
-            // is how it is installed. Either way there is one file it came out of.
+            // A mod loads from a folder while it is developed and from an
+            // archive once it is installed.
             var source = mod.SourcePath;
             var folder = Directory.Exists(source);
             var origin = folder ? Path.Combine(source, BundledAt) : source;
@@ -90,12 +86,11 @@ public static class BundledService
                 entry.ExtractToFile(executable, overwrite: true);
             }
 
-            // Stamped with the time of the file it came out of, so that "is this
-            // the service that came with this build" is a question the two can
-            // answer. Extraction gives the copy the time the *entry* carries,
-            // which is when the service was compiled — a different clock from
-            // when the archive was made, and comparing the two says nothing. The
-            // one comparison that means anything is against the archive itself.
+            // Stamp the copy with the archive's own time, so the check above can
+            // tell whether this is the service that came with this build.
+            // Extraction otherwise stamps the copy with the entry's time, which
+            // is when the service was compiled and does not compare against the
+            // archive's time.
             File.SetLastWriteTimeUtc(executable, packed);
             MakeRunnable(executable);
 
@@ -110,12 +105,11 @@ public static class BundledService
     }
 
     /// <summary>
-    /// Gives the unpacked binary the bits it needs to be executed.
+    /// Sets the execute bits on the unpacked binary.
     ///
-    /// Guarded rather than assumed, even though only a Linux build is ever
-    /// unpacked: the check above is what makes that true, and a platform check
-    /// three call frames away is not something the next reader of this line — or
-    /// the compiler — can see.
+    /// Tests the platform here even though <see cref="Unpack"/> only unpacks a
+    /// Linux build. The compiler cannot see that test from three call frames
+    /// away, and neither can the next reader of this line.
     /// </summary>
     private static void MakeRunnable(string executable)
     {

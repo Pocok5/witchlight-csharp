@@ -5,40 +5,37 @@ using Vintagestory.API.Server;
 namespace Witchlight;
 
 /// <summary>
-/// Getting the pictures a marker is drawn with.
+/// Collects the pictures a marker is drawn with from joining clients.
 ///
-/// Unlike the palette this is not a fallback for a poor result — it is the only
-/// way the pictures ever arrive. A dedicated server's install has no SVG in it at
-/// all: its `textures` directory is there and empty of them.
+/// This is the only way the pictures ever arrive. A dedicated server's install
+/// carries no SVG at all, and its `textures` directory is present and empty of
+/// them.
 ///
-/// **Anybody is asked, and anybody may add a picture the server does not have;
-/// only an admin may replace one it does.** The same rule the palette follows and
-/// for the same reason: a server whose operator never joins in game would
-/// otherwise draw every marker as a plain diamond forever, and a picture laid
-/// where there is none can only improve on nothing.
+/// **Anybody is asked, and anybody may add a picture the server does not have.
+/// Only an admin may replace one it does.** The palette follows the same rule.
+/// Without it, a server whose operator never joins in game would draw every
+/// marker as a plain diamond forever.
 /// </summary>
 public sealed class IconExchange(ICoreServerAPI api, string exports)
 {
     private readonly ICoreServerAPI _api = api;
     private readonly string _exports = exports;
 
-    /// <summary>How many are on disk for the map service to draw with.</summary>
+    /// <summary>Returns how many icons are on disk for the map service to draw with.</summary>
     public int Count => Icons.Stored(_exports).Count;
 
     /// <summary>
-    /// Asks whoever has just joined for whatever is missing.
+    /// Asks a joining client for the icons the server does not have.
     ///
-    /// Only what is missing: a mod adding one marker costs one icon, not the whole
-    /// set again, and a server that has the lot asks for nothing and is sent
-    /// nothing. That is what makes asking everybody cheap — the cost is one small
-    /// packet per join once the set is complete.
+    /// Asks only for what is missing, so a mod adding one marker costs one icon
+    /// rather than the whole set, and a server with the full set asks for nothing.
+    /// That keeps asking everybody to one small packet per join.
     /// </summary>
     public void AskForMissing(IServerPlayer player) => Ask(player, Icons.Stored(_exports));
 
     /// <summary>
-    /// Asks for everything, not only what is missing.
-    ///
-    /// The way back if an icon on disk is wrong rather than absent.
+    /// Asks a client for every icon, not only the missing ones. This is the
+    /// recovery when an icon on disk is wrong rather than absent.
     /// </summary>
     public void AskForAll(IServerPlayer player) => Ask(player, new List<string>());
 
@@ -49,16 +46,16 @@ public sealed class IconExchange(ICoreServerAPI api, string exports)
     }
 
     /// <summary>
-    /// Takes marker pictures from a client and keeps what they add.
+    /// Takes marker pictures from a client and keeps the ones they add.
     ///
-    /// Merged rather than replaced, like the palette: a client only has the art
-    /// for the mods it has installed, so two players with different mod sets can
-    /// between them cover more than either alone.
+    /// Merges rather than replacing, as the palette does. A client only has the
+    /// art for the mods it has installed, so two players with different mod sets
+    /// cover more between them than either alone.
     ///
-    /// **An admin may overwrite a picture; anybody else may only add one.** A
-    /// player's contribution is filtered to names the server does not have, and
-    /// bounded in number — the sender no longer has to be an admin, and a client
-    /// inventing names is otherwise a client filling a disk.
+    /// **An admin may overwrite a picture. Anybody else may only add one.**
+    /// Filters a non-admin's contribution to names the server does not have and
+    /// bounds how many it takes, since a client inventing names could otherwise
+    /// fill a disk.
     /// </summary>
     public void Accept(IServerPlayer player, IconTable table)
     {
@@ -79,12 +76,12 @@ public sealed class IconExchange(ICoreServerAPI api, string exports)
     }
 
     /// <summary>
-    /// The pictures a server without them can take from anybody: ones it has no
-    /// file for, and no more of them than a map has any use for.
+    /// Returns the pictures a server may take from a non-admin: the ones it has
+    /// no file for, up to <see cref="MostFromPlayers"/>.
     ///
     /// The count is what makes this safe rather than the names. A name is already
     /// reduced to characters that are safe in a path, but nothing stops a client
-    /// inventing an unlimited number of them, and every one is a file.
+    /// inventing an unlimited number of them, and every one becomes a file.
     /// </summary>
     private List<(string Name, byte[] Svg)> OnlyNew(List<(string Name, byte[] Svg)> sent)
     {
@@ -104,12 +101,13 @@ public sealed class IconExchange(ICoreServerAPI api, string exports)
     }
 
     /// <summary>
-    /// The most marker pictures this will hold from players who are not admins.
+    /// The most marker pictures the server will hold from players who are not
+    /// admins.
     ///
     /// A stock game draws markers with about forty and a heavy mod set with a few
-    /// hundred, so this is well past any real set and well short of a disk. An
-    /// admin is not held to it: they can write to the map directory anyway, and
-    /// the number that would bound them is a guess about somebody else's mods.
+    /// hundred, so this is well past any real set and well short of filling a
+    /// disk. An admin is not held to it, since an admin can write to the map
+    /// directory anyway.
     /// </summary>
     private const int MostIcons = 512;
 

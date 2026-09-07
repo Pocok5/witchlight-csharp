@@ -8,22 +8,21 @@ using Vintagestory.API.Config;
 namespace Witchlight;
 
 /// <summary>
-/// What the game calls each block.
+/// Exports the name the game gives each block.
 ///
-/// The map knows a block by its code — `game:crop-spelt-1` — because that is
-/// what a palette is keyed on and what a rendered column reads back as. A person
-/// clicking the map to mark something wants the name they would see in their own
-/// hands: "Growing spelt", not a path with a number on the end.
+/// The map knows a block by its code, such as `game:crop-spelt-1`, because that
+/// is what a palette is keyed on and what a rendered column reads back as. A
+/// person clicking the map to mark something wants the name they would see in
+/// their own hands, which is "Growing spelt".
 ///
-/// Resolved the way the game resolves it, through the same wildcard lookup that
-/// turns `block-crop-spelt-*` into one name for every growth stage. Nothing here
-/// invents a name: a block the language files say nothing about is left out, and
-/// whatever reads this falls back to the code.
+/// Names resolve the way the game resolves them, through the same wildcard
+/// lookup that turns `block-crop-spelt-*` into one name for every growth stage.
+/// Nothing here invents a name. A block the language files say nothing about is
+/// left out, and the reader falls back to the code.
 ///
-/// Written to a file rather than posted, because it is the better part of a
-/// megabyte and changes only when the mod set does — the same reasons the palette
-/// is a file. Written only when it differs, so a server restarted on unchanged
-/// assets touches nothing.
+/// This goes to a file rather than over the wire because it runs to the better
+/// part of a megabyte and changes only when the mod set does. It is written only
+/// when it differs, so a server restarted on unchanged assets touches nothing.
 /// </summary>
 public static class BlockNames
 {
@@ -33,21 +32,16 @@ public static class BlockNames
     /// Writes the name of every block that has one.
     ///
     /// Returns how many were named, how many of those the palette can look up,
-    /// and whether the file was rewritten. The middle number is the one worth
-    /// reading: this table is only ever read with a code out of the palette, so
-    /// a table keyed any other way is a table that answers nothing — and it does
-    /// so silently, which is how one shipped keyed on short codes against a
-    /// palette keyed on full ones.
+    /// and whether the file was rewritten. The middle number matters most. This
+    /// table is only ever read with a code out of the palette, so a table keyed
+    /// any other way answers nothing and reports no error. One shipped keyed on
+    /// short codes against a palette keyed on full ones.
     /// </summary>
     public static (int Named, int Known, int Blocks, bool Written) Export(
         ICoreAPI api,
         string exports,
         Palette palette)
     {
-        // Written down here because it is the whole contract with the service:
-        // it reads this table with a code out of the palette, and a table keyed
-        // any other way answers nothing for every block on the map.
-
         var names = new SortedDictionary<string, string>(StringComparer.Ordinal);
         var blocks = 0;
 
@@ -59,9 +53,9 @@ public static class BlockNames
             }
             blocks++;
 
-            // The same spelling the palette keys on — `game:rock-granite`, domain
-            // and all. A short code here would be a table nothing could look a
-            // block up in, and nothing on either side would say so.
+            // Key on the same spelling the palette uses, domain and all, as in
+            // `game:rock-granite`. A short code here would make the table
+            // unlookupable and neither side would report it.
             var code = block.Code.ToString();
             if (names.ContainsKey(code))
             {
@@ -69,8 +63,8 @@ public static class BlockNames
             }
 
             var said = NameOf(block);
-            // A name that is only the code again says nothing the reader of this
-            // file does not already have, and there are thousands of them.
+            // A name that repeats the code tells the reader nothing new, and
+            // there are thousands of them.
             if (string.IsNullOrEmpty(said) || said == code)
             {
                 continue;
@@ -93,11 +87,11 @@ public static class BlockNames
     }
 
     /// <summary>
-    /// One block's name, or null where the language files have none.
+    /// Returns one block's name, or null where the language files have none.
     ///
-    /// The key is the one the game builds for a held block, so a mod's own block
-    /// resolves out of that mod's language file without anything here knowing it
-    /// exists.
+    /// The lookup key matches the one the game builds for a held block, so a
+    /// mod's own block resolves out of that mod's language file without anything
+    /// here knowing the mod exists.
     /// </summary>
     private static string? NameOf(Block block)
     {

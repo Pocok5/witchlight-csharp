@@ -10,54 +10,51 @@ using Vintagestory.API.Server;
 namespace Witchlight;
 
 /// <summary>
-/// Which directory a world's map lives in.
+/// Works out which directory a world's map lives in.
 ///
-/// A dedicated server runs one world out of one data path, so its map has always
-/// sat in one folder and there is no reason to move it. A client runs every save
-/// it has out of the same data path, and one folder for all of them means the
-/// second world writes its terrain into the first world's map at the same region
-/// coordinates — a map of two worlds at once, with nothing anywhere saying so.
-/// It also means the palette and the block names, which are about the mod set and
-/// not the world, are rewritten in full on every switch between a world with no
-/// mods and a world with fifty.
+/// A dedicated server runs one world out of one data path, so its map sits in
+/// one folder. A client runs every save out of the same data path, and one
+/// folder for all of them means the second world writes its terrain into the
+/// first world's map at the same region coordinates. That produces a map of two
+/// worlds at once with nothing saying so. It also rewrites the palette and the
+/// block names in full on every switch between a world with no mods and a world
+/// with fifty, even though those files describe the mod set rather than the
+/// world.
 ///
 /// So each world may have a directory of its own, named after it. Nothing is
-/// shared between them, including what happens to be identical: a file written
-/// once and then left alone costs nothing to keep, while one rewritten on every
-/// switch costs a disk.
+/// shared between them, including files that happen to be identical. A file
+/// written once and left alone costs nothing to keep.
 /// </summary>
 public static class MapDirectory
 {
     /// <summary>
-    /// What this world's map is filed under.
+    /// Returns the directory name this world's map is filed under.
     ///
-    /// The world's own name, so a directory listing reads as a list of worlds,
-    /// and enough of the savegame's identifier to tell two of them apart. Worlds
-    /// called "New World" are not rare, and two of them sharing a directory is
-    /// the whole failure this exists to prevent — a readable name is worth
-    /// having and is not worth being wrong about.
+    /// The name combines the world's own name, so a directory listing reads as a
+    /// list of worlds, with enough of the savegame's identifier to tell two of
+    /// them apart. Worlds called "New World" are common, and two of them sharing
+    /// a directory is the failure this exists to prevent.
     /// </summary>
     public static string NameFor(string? worldName, string? savegameId, int seed)
     {
         var named = Sanitised(worldName);
-        // The identifier where the savegame has one, and something stable where
-        // it does not: it is optional in the format, so a world made by an older
-        // build may carry none. A name and a seed together are what that world
-        // has instead, and they are as fixed as the world is.
+        // The savegame identifier is optional in the format, so a world made by
+        // an older build may carry none. The name and the seed together are as
+        // fixed as the world is, so they stand in for it.
         var unique = string.IsNullOrWhiteSpace(savegameId)
             ? $"{worldName}:{seed}"
             : savegameId!;
         return $"{named}-{Short(unique)}";
     }
 
-    /// <summary>The same, for the world a server is actually running.</summary>
+    /// <summary>Returns the directory name for the world a server is running.</summary>
     public static string NameFor(ICoreServerAPI api)
     {
         var save = api.WorldManager.SaveGame;
         return NameFor(save?.WorldName, save?.SavegameIdentifier, save?.Seed ?? 0);
     }
 
-    /// <summary>The world a server is running, as the three facts this needs.</summary>
+    /// <summary>Settles the map directory for the world a server is running.</summary>
     public static string Settle(ICoreServerAPI api, string baseDir, bool perWorld)
     {
         var save = api.WorldManager.SaveGame;
@@ -67,11 +64,12 @@ public static class MapDirectory
     }
 
     /// <summary>
-    /// A name a filesystem will take, out of a name a person typed.
+    /// Turns a name a person typed into one a filesystem will take.
     ///
-    /// Every path separator and every character Windows refuses, plus leading and
-    /// trailing dots and spaces, which Windows also drops silently — a directory
-    /// it renamed under us is a map that goes missing on the next start.
+    /// This replaces every path separator and every character Windows refuses,
+    /// then strips leading and trailing dots and spaces. Windows drops those last
+    /// silently, and a directory it renames behind us is a map that goes missing
+    /// on the next start.
     /// </summary>
     private static string Sanitised(string? name)
     {
@@ -82,12 +80,11 @@ public static class MapDirectory
             .Trim()
             .Trim('.');
 
-        // A world named entirely in characters a filesystem refuses is still a
-        // world, and it still needs somewhere to go.
+        // A world named entirely in refused characters still needs a directory.
         return kept.Length == 0 ? "world" : kept[..Math.Min(kept.Length, 64)].TrimEnd();
     }
 
-    /// <summary>Eight hex characters of something that does not change.</summary>
+    /// <summary>Hashes a stable string down to eight hex characters.</summary>
     private static string Short(string of)
     {
         var digest = SHA256.HashData(Encoding.UTF8.GetBytes(of));
@@ -95,14 +92,13 @@ public static class MapDirectory
     }
 
     /// <summary>
-    /// Where this world's map goes, and moving what is already there if it has to.
+    /// Returns where this world's map goes, moving a loose map aside first.
     ///
-    /// A map found sitting loose in the folder belongs to whichever world last
-    /// ran, and turning this setting on must not leave it to be written over by
-    /// the next one. It is moved down into a directory of its own before anything
-    /// else happens: this world's, where `world.json` says it is this world's,
-    /// and one named after whoever it does belong to otherwise. Nothing is
-    /// deleted and nothing is merged.
+    /// A map sitting loose in the folder belongs to whichever world last ran, and
+    /// turning this setting on must not leave it to be written over by the next
+    /// one. It moves into a directory of its own before anything else happens:
+    /// this world's, where `world.json` says it is this world's, and one named
+    /// after its own world otherwise. Nothing is deleted and nothing is merged.
     /// </summary>
     public static string Settle(
         string baseDir, string? worldName, string? savegameId, int seed, bool perWorld, ILogger log)
@@ -118,11 +114,11 @@ public static class MapDirectory
     }
 
     /// <summary>
-    /// Puts a map lying loose in the folder into a directory of its own.
+    /// Moves a map lying loose in the folder into a directory of its own.
     ///
-    /// Only when there is one and only when it has nowhere to go yet. A folder
-    /// that already holds this world's directory has been through this, and a
-    /// move on top of it would be the merge this is here to prevent.
+    /// This runs only when a loose map exists and its destination does not. A
+    /// folder that already holds the destination directory has been through this,
+    /// and moving on top of it would be the merge this prevents.
     /// </summary>
     private static void MoveLooseMapAside(
         string baseDir, string mine, string? worldName, ILogger log)
@@ -154,7 +150,7 @@ public static class MapDirectory
             foreach (var folder in Directory.EnumerateDirectories(baseDir))
             {
                 var name = Path.GetFileName(folder);
-                // Not the directories this is making, and not another world's.
+                // Skip the directory being built and any other world's map.
                 if (folder == moved.FullName || Directory.Exists(Path.Combine(folder, "columns")))
                 {
                     continue;
@@ -181,13 +177,12 @@ public static class MapDirectory
     }
 
     /// <summary>
-    /// Whose the loose map is.
+    /// Returns the directory a loose map belongs in.
     ///
-    /// `world.json` names the world it was written for. Where that is this world
-    /// it goes straight into this world's directory, keys and all. Where it names
-    /// another it goes under that name alone — this half cannot work out another
-    /// world's identifier, and a map parked under a readable name is a map
-    /// somebody can find, which beats one written over.
+    /// `world.json` names the world the map was written for. Where that is this
+    /// world, the map goes into this world's directory. Where it names another,
+    /// the map goes under that name alone, because this half cannot work out
+    /// another world's savegame identifier.
     /// </summary>
     public static string LooseMapBelongsTo(string baseDir, string mine, string? worldName)
     {

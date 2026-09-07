@@ -7,38 +7,35 @@ using Vintagestory.API.Datastructures;
 namespace Witchlight;
 
 /// <summary>
-/// Watches what this player looks like and asks for a new picture once it settles.
+/// Watches what this player looks like and sends a new picture once it settles.
 ///
-/// A portrait is worth redrawing when a seraph changes, and a seraph changes in
-/// bursts: somebody trying on a hat moves it between two slots half a dozen times
-/// in as many seconds, and every one of those is a picture rendered, a packet sent
-/// and a file written for a state nobody stayed in. So a change is not a signal to
-/// send — it is a signal to start waiting again, and the picture is drawn once the
-/// waiting runs out. A whole afternoon at the dressing table costs one portrait.
+/// A seraph changes in bursts. Somebody trying on a hat moves it between two slots
+/// half a dozen times in as many seconds, and sending on each move would render a
+/// picture, send a packet and write a file for a state nobody stayed in. So a
+/// change restarts the wait rather than sending, and the picture is drawn once the
+/// wait runs out. A whole afternoon at the dressing table costs one portrait.
 ///
-/// What counts as a change is the two things that decide the face: the character
-/// inventory, which holds every piece of clothing and armour worn, and the skin
-/// configuration, which is who they chose to be. Neither the hotbar nor the
-/// backpack is watched — a portrait is cut to the head and shoulders, so what is
-/// carried never appears in it.
+/// Watches the two things that decide the face: the character inventory, which
+/// holds every piece of clothing and armour worn, and the skin configuration.
+/// Watches neither the hotbar nor the backpack, since a portrait is cropped to the
+/// head and shoulders and what is carried never appears in it.
 ///
 /// A slot event is only the signal to look. Armour wearing down and a garment
-/// repaired both modify the slot they sit in without changing what is worn, and
-/// each of those used to be a portrait sent — the same picture, every few
-/// minutes, all session. So what is compared is what is worn: the item in each
-/// slot and the skin chosen, as one string, and a settled burst that leaves it
-/// where it was sends nothing. The first look after joining only records it —
-/// the server asks for a picture itself where it has none.
+/// being repaired both modify the slot they sit in without changing what is worn,
+/// and each sent the same picture every few minutes all session. So this compares
+/// what is worn, as the item in each slot and the skin chosen in one string, and a
+/// settled burst that leaves the string unchanged sends nothing. The first look
+/// after joining only records the string, and the server asks for a picture itself
+/// where it has none.
 /// </summary>
 public sealed class PortraitWatch
 {
     /// <summary>
     /// How often the wait is measured and the subscriptions renewed.
     ///
-    /// Both on the same beat, because both questions are "is this still the
-    /// character I was watching, and has it sat still long enough". Renewing on a
-    /// tick rather than on a join event means a relog, a respawn or an inventory
-    /// arriving late all mend themselves without any of them being predicted.
+    /// Both run on the same beat. Renewing on a tick rather than on a join event
+    /// means a relog, a respawn and an inventory arriving late all mend themselves
+    /// without being predicted.
     /// </summary>
     private const int CheckMs = 1000;
 
@@ -48,10 +45,10 @@ public sealed class PortraitWatch
     private IInventory? _wearing;
     private SyncedTreeAttribute? _skin;
 
-    /// <summary>When this character last changed, or null when it is settled.</summary>
+    /// <summary>When this character last changed, or null when it has settled.</summary>
     private DateTime? _changedAt;
 
-    /// <summary>What was worn the last time this looked, or null before it has.</summary>
+    /// <summary>What was worn at the last look, or null before the first look.</summary>
     private string? _worn;
 
     public PortraitWatch(ICoreClientAPI capi, Action send)
@@ -62,11 +59,11 @@ public sealed class PortraitWatch
     }
 
     /// <summary>
-    /// Notes a change without sending anything.
+    /// Records a change without sending anything.
     ///
-    /// Called from wherever a picture has just been sent by other means, so that a
-    /// change arriving moments later is still waited out from now rather than from
-    /// whenever the burst began.
+    /// Called wherever a picture has just been sent by other means, so a change
+    /// arriving moments later is waited out from now rather than from when the
+    /// burst began.
     /// </summary>
     public void Settled() => _changedAt = null;
 
@@ -96,12 +93,13 @@ public sealed class PortraitWatch
     }
 
     /// <summary>
-    /// What this player looks like, as one string that moves when the look does.
+    /// Returns what this player looks like, as one string that changes when the
+    /// look does.
     ///
-    /// The item in each clothing slot by its code — not the stack, whose
-    /// durability moves with every hit taken — and the skin configuration as the
-    /// game serialises it. Nothing about order is assumed: the slots are read in
-    /// the inventory's own order, which is fixed for a character.
+    /// Uses the item code in each clothing slot rather than the stack, whose
+    /// durability moves with every hit taken, plus the skin configuration as the
+    /// game serialises it. Reads the slots in the inventory's own order, which is
+    /// fixed for a character.
     /// </summary>
     private string Worn()
     {
@@ -119,11 +117,11 @@ public sealed class PortraitWatch
     }
 
     /// <summary>
-    /// Subscribes to this player's character, and unsubscribes from the last one.
+    /// Subscribes to this player's character and unsubscribes from the last one.
     ///
-    /// Idempotent, and cheap when nothing moved: the common tick compares two
-    /// references and stops. A character that is not this one is not a change to
-    /// this one, so swapping resets the wait rather than starting it.
+    /// Idempotent and cheap when nothing moved, since the common tick compares two
+    /// references and stops. Swapping character resets the wait rather than
+    /// starting it, because another character is not a change to this one.
     /// </summary>
     private void Follow()
     {
@@ -142,8 +140,8 @@ public sealed class PortraitWatch
                 _wearing.SlotModified += OnSlotModified;
             }
 
-            // A new character is looked at afresh: what the last one wore says
-            // nothing about this one, and the first look records rather than sends.
+            // Look at a new character afresh. What the last one wore says nothing
+            // about this one, and the first look records rather than sends.
             _worn = null;
             _changedAt = DateTime.UtcNow;
         }

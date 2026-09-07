@@ -6,16 +6,13 @@ using Vintagestory.API.Server;
 namespace Witchlight;
 
 /// <summary>
-/// What the mod takes from the game's assets, while they are still there to take.
+/// Reads what the mod needs out of the game's assets, while they are still loaded.
 ///
-/// The same class as the rest of the mod system, for the reason the commands and
-/// the greeting are: this is a view of the whole system rather than a thing of
-/// its own.
+/// Part of <see cref="WitchlightSystem"/>, as the commands and the greeting are.
 ///
-/// It is kept apart because it answers to a different clock. Everything else here
-/// runs once a world is up; this runs while the game is still loading, in the one
-/// window between the textures being read and the server freeing them — which is
-/// why the palette is built at a moment that otherwise looks arbitrary.
+/// Kept in its own file because it runs on a different clock. Everything else runs
+/// once a world is up, while this runs during loading, in the window between the
+/// textures being read and the server freeing them.
 /// </summary>
 public partial class WitchlightSystem
 {
@@ -23,11 +20,11 @@ public partial class WitchlightSystem
     public override void AssetsLoaded(ICoreAPI api) => Report(api, "AssetsLoaded");
 
     /// <summary>
-    /// Everything that has to be read while the assets are still in memory.
+    /// Reads everything that has to be read while the assets are still in memory.
     ///
     /// The server frees block textures once assets are loaded, so a palette not
-    /// built here cannot be built at all — and the icons, colour maps and block
-    /// names come out of the same assets, so they are read in the same pass.
+    /// built here cannot be built at all. The icons, colour maps and block names
+    /// come out of the same assets and are read in the same pass.
     /// </summary>
     public override void AssetsFinalize(ICoreAPI api)
     {
@@ -36,18 +33,15 @@ public partial class WitchlightSystem
     }
 
     /// <summary>
-    /// Writes everything the assets said, once there is a directory to write it
-    /// to.
+    /// Writes everything the assets said, once there is a directory to write it to,
+    /// and returns the settled palette.
     ///
-    /// The palette was built at asset load because the textures behind it are
-    /// freed straight afterwards. The rest is read here: the colour maps, the
-    /// marker pictures and the block names come out of assets the server keeps,
-    /// so the only reason they were up there was that the palette had to be.
+    /// The palette is built at asset load because the textures behind it are freed
+    /// straight afterwards. The colour maps, the marker pictures and the block
+    /// names come out of assets the server keeps, so this reads them here.
     ///
-    /// Hands the settled palette back rather than leaving it in a field. It used
-    /// to be a field, and the one caller read it before this had run — so the
-    /// half of the mod that asks a client for a palette was built against a null
-    /// and never asked anybody. A value that is returned cannot be read early.
+    /// Returns the palette rather than leaving it in a field, so a caller cannot
+    /// read it before this has run.
     /// </summary>
     private PaletteExchange.Built? WriteWhatTheAssetsSaid(ICoreServerAPI api)
     {
@@ -87,9 +81,8 @@ public partial class WitchlightSystem
     }
 
     /// <summary>
-    /// Says whether block textures are readable at this point. The answer decides
-    /// whether a palette can be built server-side at all, so it is logged rather
-    /// than assumed.
+    /// Logs whether block textures are readable at this point. The answer decides
+    /// whether a palette can be built server-side at all.
     /// </summary>
     private static void Report(ICoreAPI api, string stage)
     {

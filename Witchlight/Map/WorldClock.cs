@@ -7,50 +7,47 @@ using Vintagestory.API.Server;
 namespace Witchlight;
 
 /// <summary>
-/// What the world's clock says, in the game's own words.
+/// Carries what the world's clock says, in the game's own words.
 ///
-/// Sent rather than filed. A clock is the thing a map has least business writing
-/// to a disk: it is stale before the write finishes, and the page asking for it
-/// every two seconds is asking a running server, not a file.
+/// This is sent over the API rather than written to disk. The value is stale
+/// before a write would finish, and the page polls the running server for it
+/// every two seconds.
 /// </summary>
 public class LiveWorld
 {
-    /// <summary>The day and the month, as the game words them — `12. May`.</summary>
+    /// <summary>The day and the month, as the game words them, such as `12. May`.</summary>
     public string Date { get; set; } = "";
 
-    /// <summary>`Year 3`.</summary>
+    /// <summary>The year, worded as `Year 3`.</summary>
     public string Year { get; set; } = "";
 
-    /// <summary>`14:30`, on the world's own clock.</summary>
+    /// <summary>The time on the world's own clock, worded as `14:30`.</summary>
     public string Time { get; set; } = "";
 
-    /// <summary>Where spawn is in the year: a season is a fact about a place,
-    /// and the hemispheres are in opposite ones.</summary>
+    /// <summary>The season at spawn. A season belongs to a place, and the two
+    /// hemispheres are in opposite ones.</summary>
     public string Season { get; set; } = "";
 
 }
 
 /// <summary>
-/// The world's clock, worded the way the game would word it.
-///
-/// Its own file rather than a third of the one the markers were in: a date, a
-/// season and a time of day are facts about the world, and the only thing they
-/// had in common with a waypoint was travelling on the same beat.
+/// Reads the world's clock and words it the way the game would.
 /// </summary>
 public static class WorldClock
 {
-    /// <summary>What the world's clock says, as the service wants it.</summary>
+    /// <summary>Serialises the world's clock as the JSON the service expects.</summary>
     public static string Json(ICoreServerAPI api)
     {
         return JsonConvert.SerializeObject(Now(api));
     }
 
     /// <summary>
-    /// The date, the time and the season, each in the words the game would use.
+    /// Returns the date, the time and the season, each in the words the game
+    /// would use.
     ///
-    /// Worded here rather than on the page because the game holds the month names
-    /// and the operator's language, and a page that spelled them itself would be
-    /// spelling them in English on a server that had chosen otherwise.
+    /// The wording happens here because the game holds the month names and the
+    /// operator's chosen language. A page wording them itself would word them in
+    /// English on a server configured otherwise.
     /// </summary>
     public static LiveWorld Now(ICoreServerAPI api)
     {
@@ -60,9 +57,8 @@ public static class WorldClock
             return new LiveWorld();
         }
 
-        // `DayOfYear` counts from zero, the way the game's own `DayOfMonth`
-        // reads it: the first day of the year is day 0, and day 0 of a month is
-        // said as its 1st.
+        // `DayOfYear` counts from zero, matching the game's own `DayOfMonth`.
+        // Day 0 of a month is worded as its 1st.
         var perMonth = Math.Max(1, calendar.DaysPerMonth);
         var dayOfYear = Math.Max(0, calendar.DayOfYear);
         var month = dayOfYear / perMonth;
@@ -80,11 +76,11 @@ public static class WorldClock
     }
 
     /// <summary>
-    /// The name of a month, counting from zero.
+    /// Returns the name of a month, counting from zero.
     ///
-    /// The game names twelve and a world may be configured with more; one past
-    /// the twelve is said by its number rather than left blank or wrapped round
-    /// to January, which would be a lie about which month it is.
+    /// The game names twelve months and a world may be configured with more. A
+    /// month past the twelfth is worded by its number. Wrapping round to January
+    /// would name the wrong month.
     /// </summary>
     private static string MonthName(int month)
     {

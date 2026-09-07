@@ -13,38 +13,35 @@ using Vintagestory.API.Common;
 namespace Witchlight;
 
 /// <summary>
-/// Posts what moves to the map service, rather than writing it to a file for the
-/// service to read back.
+/// Posts everything that moves to the map service over HTTP.
 ///
-/// Player positions are worth nothing once they are old, so a file was a
-/// round trip through the disk for data that never needed to survive it — with a
-/// write every couple of seconds for as long as the server was up.
+/// Player positions are worth nothing once they are old, so they go over a socket
+/// rather than through a file the service reads back.
 ///
-/// The service listens on loopback, on whatever port the machine had free, and
-/// writes both that port and a token into `api.json` beside the map. Nothing off
-/// the machine can reach loopback and nothing on it can post without having read
-/// that file, which is the protection a unix socket's permissions used to give —
-/// on a platform where Windows has one too.
+/// The service listens on loopback on whatever port the machine had free, and
+/// writes that port and a token into `api.json` beside the map. Nothing off the
+/// machine can reach loopback, and nothing on it can post without having read
+/// that file.
 ///
-/// The port changes every time the service starts, so where it is is a belief
-/// about the service rather than a fact about it, and the file is read again
-/// whenever a post fails. That also covers the ordinary first case: the mod
-/// starts the service, so for the first moments there is no file to read.
+/// The port changes every time the service starts, so this class reads the file
+/// again whenever a post fails. That also covers the first moments after the mod
+/// starts the service, when there is no file to read yet.
 ///
 /// Set `WITCHLIGHT_API_BIND` and `WITCHLIGHT_API_TOKEN` to reach a service on
-/// another machine, which cannot be told anything by a file beside this one; set
-/// `api_bind` and `api_token` to match on the service.
+/// another machine, which no file beside this one can name, and set `api_bind`
+/// and `api_token` to match on the service.
 ///
-/// Nothing here blocks the game. Posts run on the thread pool and one is dropped
-/// rather than queued if the last has not finished: a position that arrived late
-/// is worse than one skipped, since another follows two seconds behind.
+/// Nothing here blocks the game. Posts run on the thread pool, and a post is
+/// dropped rather than queued while the last is still in flight. A position that
+/// arrives late is worse than one skipped, since another follows two seconds
+/// behind.
 /// </summary>
 public sealed class MapService : IDisposable
 {
     private const string BindVariable = "WITCHLIGHT_API_BIND";
     private const string TokenVariable = "WITCHLIGHT_API_TOKEN";
 
-    /// <summary>Where the service says it is listening, and the word it wants.</summary>
+    /// <summary>The address the service published, and the token it wants.</summary>
     private sealed record Endpoint(string Url, string Token);
 
     private readonly HttpClient _client;
@@ -52,50 +49,47 @@ public sealed class MapService : IDisposable
     private readonly string _exports;
 
     /// <summary>
-    /// The last answer read out of `api.json`, or null where there was none to
-    /// read. Replaced wholesale rather than mutated, so a post already in flight
+    /// The endpoint last read out of `api.json`, or null when there was none.
+    /// Replaced wholesale rather than mutated, so a post already in flight
     /// finishes against the endpoint it started with.
     /// </summary>
     private volatile Endpoint? _endpoint;
 
     /// <summary>
-    /// One kind of thing this posts, and everything that is true of it alone.
+    /// One kind of thing this posts, with its own path, health and in-flight
+    /// flag.
     ///
-    /// Kept apart on purpose. One reading for both was worse than useless:
-    /// players go every two seconds and markers every fifteen, so a succeeding
-    /// player post overwrote a failing marker post almost immediately and the
-    /// status line read healthy while half the data was going nowhere.
-    ///
-    /// A value rather than a boolean threaded through three methods. The old
-    /// shape worked out which feed it was by comparing the path against a string
-    /// literal, and every method that reported on one took an `isPlayers` and
-    /// branched on it twice.
+    /// Each feed carries its own health because they post at different rates.
+    /// Players go every two seconds and markers every fifteen, so one shared
+    /// health field would let a succeeding player post hide a failing marker post
+    /// and report healthy while half the data went nowhere.
     /// </summary>
     private sealed class Feed(string name, string path)
     {
         private int _sending;
 
-        /// <summary>What to call it when something goes wrong.</summary>
+        /// <summary>The feed's name, for the log and the status line.</summary>
         public string Name { get; } = name;
 
-        /// <summary>Where it is posted.</summary>
+        /// <summary>The path the feed is posted to.</summary>
         public string Path { get; } = path;
 
-        /// <summary>What happened to the last post of this kind.</summary>
+        /// <summary>What happened to the last post on this feed.</summary>
         public string Health { get; set; } = "nothing sent yet";
 
         /// <summary>
-        /// Takes the right to post, or says somebody else already has it.
+        /// Claims the right to post on this feed. Returns false when a post is
+        /// already in flight.
         ///
-        /// One at a time: a position that arrived late is worse than one skipped,
-        /// since another follows two seconds behind.
+        /// One post at a time. A position that arrives late is worse than one
+        /// skipped, since another follows two seconds behind.
         /// </summary>
         public bool Claim() => Interlocked.CompareExchange(ref _sending, 1, 0) == 0;
 
-        /// <summary>Whether a post of this kind is on its way now.</summary>
+        /// <summary>True while a post on this feed is in flight.</summary>
         public bool Busy => Volatile.Read(ref _sending) != 0;
 
-        /// <summary>Lets the next post of this kind start.</summary>
+        /// <summary>Releases the feed so the next post may start.</summary>
         public void Release() => Interlocked.Exchange(ref _sending, 0);
     }
 
@@ -116,14 +110,15 @@ public sealed class MapService : IDisposable
     public string TerrainHealth => HealthOf(_terrain);
 
     /// <summary>
-    /// Whether a terrain post is still on its way. The exporter asks before it
-    /// takes anything off its pile: terrain is the one feed where a post dropped
-    /// for another being in flight would be ground lost rather than a position
-    /// skipped, so nothing is taken until there is room to send it.
+    /// True while a terrain post is in flight.
+    ///
+    /// The exporter reads this before taking chunks off its pile. Terrain is the
+    /// one feed where a dropped post loses ground rather than skipping a
+    /// position, so nothing is taken until there is room to send it.
     /// </summary>
     public bool TerrainBusy => _terrain.Busy;
 
-    /// <summary>What one feed last did, read from the thread that asked.</summary>
+    /// <summary>Returns what one feed's last post did.</summary>
     private string HealthOf(Feed feed)
     {
         lock (_reporting)
@@ -133,15 +128,13 @@ public sealed class MapService : IDisposable
     }
 
     /// <summary>
-    /// The lock over what the last post of each kind did, and whether the fault
-    /// has been said out loud.
+    /// Guards each feed's health and the flag saying the fault has been logged.
     ///
-    /// Every feed posts at once, each on its own threadpool thread, and
-    /// `/witchlight status` reads the health lines from the game thread — so this
-    /// is state with several writers and a reader that is none of them. One lock
-    /// rather than one per feed, because "say it once" is a claim about all of
-    /// them together: two feeds failing in the same second is one outage, and it
-    /// was the unguarded check on `_complained` that let both of them say so.
+    /// Every feed posts on its own threadpool thread and `/witchlight status`
+    /// reads the health lines from the game thread, so this state has several
+    /// writers and a reader that is none of them. One lock covers all the feeds,
+    /// because logging the fault once is a claim about all of them together: two
+    /// feeds failing in the same second is one outage.
     /// </summary>
     private readonly object _reporting = new();
 
@@ -155,7 +148,7 @@ public sealed class MapService : IDisposable
 
     /// <param name="resendMarkersEvery">
     /// How long an unchanged marker list may go unsent. Injectable so a test can
-    /// watch the resend happen without waiting minutes for it.
+    /// watch the resend without waiting minutes for it.
     /// </param>
     public MapService(string exports, ILogger log, TimeSpan? resendMarkersEvery = null)
     {
@@ -163,8 +156,8 @@ public sealed class MapService : IDisposable
         _exports = exports;
         _resendMarkers = resendMarkersEvery ?? TimeSpan.FromMinutes(5);
 
-        // No BaseAddress: the port moves with every service start, and a client
-        // carries its base for life. Each post names where it is going instead.
+        // Set no BaseAddress. The port moves with every service start and a
+        // client carries its base for life, so each post names its own address.
         _client = new HttpClient { Timeout = TimeSpan.FromSeconds(5) };
 
         _endpoint = Resolve();
@@ -173,23 +166,23 @@ public sealed class MapService : IDisposable
             _endpoint?.Url ?? $"whatever {ConnectionPath(exports)} names, once the service has written it");
     }
 
-    /// <summary>Where the connection file is. The service writes it as it binds.</summary>
+    /// <summary>Returns the path of the connection file the service writes as it binds.</summary>
     public static string ConnectionPath(string exports) => Path.Combine(exports, "api.json");
 
     /// <summary>
-    /// Where to post, reading the connection file again if the last look found
-    /// nothing. Three callers asked this the same way and each spelled out the
-    /// assignment back into the field.
+    /// Returns the endpoint to post to, reading the connection file again when
+    /// the last look found nothing.
     /// </summary>
     private Endpoint? Where() => _endpoint ??= Resolve();
 
     /// <summary>
-    /// Where to post, from the environment if an operator said, and otherwise from
-    /// the file the service wrote.
+    /// Reads the endpoint from the environment when an operator set one, and
+    /// otherwise from the file the service wrote. Returns null when there is
+    /// nothing to read.
     ///
-    /// Null rather than a guess where there is nothing to read. A service that has
-    /// not started yet and one that will never start look the same from here, and
-    /// both are answered by trying again on the next tick.
+    /// Returns null rather than guessing. A service that has not started yet and
+    /// one that never will look the same from here, and the next tick tries
+    /// again either way.
     /// </summary>
     private Endpoint? Resolve()
     {
@@ -220,28 +213,24 @@ public sealed class MapService : IDisposable
         }
         catch (Exception error)
         {
-            // A half-written or unreadable file is the same as no file: something
-            // else is wrong and saying so every two seconds would not help.
+            // Treat a half-written or unreadable file as no file. Something else
+            // is wrong, and logging it every two seconds would not help.
             _log.Debug("[witchlight] could not read the connection file: {0}", error.Message);
             return null;
         }
     }
 
     /// <summary>
-    /// One post on the API channel that answers with something rather than
-    /// merely being accepted.
+    /// Posts on the API channel and returns the deserialized reply, or null when
+    /// there is nothing to return.
     ///
-    /// Three things ask rather than tell — a login word, what one player has set
-    /// for themselves on the map, and the keeping of one preset — and they
-    /// differ in the address and the body alone. Each happens when somebody
-    /// types or presses something rather than every two seconds, so none of them
-    /// rides the tick, and each is awaited by its caller off the game thread: it
-    /// is an HTTP round trip, and the game does not wait for the map.
+    /// Serves the three requests that expect an answer: minting a login word,
+    /// reading what one player has set on the map, and keeping one preset. Each
+    /// runs when somebody types or presses something rather than on the tick, and
+    /// each caller awaits it off the game thread.
     ///
-    /// Null where there is nothing to give back, including where the service is
-    /// not answering. That is ordinary — it is a separate program and the game
-    /// does not depend on it — and the address goes with it, so the next ask
-    /// reads where the next service bound.
+    /// Returns null when the service is not answering, and drops the stale
+    /// address, so the next request reads where the next service bound.
     /// </summary>
     private async Task<string?> Ask(string path, object? body = null, bool quietly = false)
     {
@@ -262,7 +251,7 @@ public sealed class MapService : IDisposable
         }
         catch (Exception error)
         {
-            // Its address goes with it, so the next ask reads where the next
+            // Drop the address with it, so the next request reads where the next
             // service bound.
             _endpoint = null;
             var said = "[witchlight] the map did not answer {0}: {1}";
@@ -279,19 +268,16 @@ public sealed class MapService : IDisposable
     }
 
     /// <summary>
-    /// One post to the service, carrying the word it wants, and whatever came
-    /// back.
+    /// Sends one POST to the service with its bearer token, and returns the
+    /// response.
     ///
-    /// Everything this sends is this: a POST to an address the service published,
-    /// with a bearer token, where a refused token means the service restarted and
-    /// minted a new one — which is the same fix as a refused connection. That was
-    /// written out three times, and the dropping of the stale address was the
-    /// part each copy had its own chance to leave out.
+    /// The one place every post goes through. A refused token means the service
+    /// restarted and minted a new one, which this treats the same as a refused
+    /// connection.
     ///
-    /// A body where there is one to send, already written as JSON: this is the
-    /// wire and nothing above it, so what a body is made of is settled before it
-    /// arrives here. Collecting markers asks for what the service is holding and
-    /// has nothing to say in the asking.
+    /// Takes a body already written as JSON, or null. This is the wire and
+    /// nothing above it, so a body is composed before it arrives here. Collecting
+    /// markers asks for what the service holds and sends no body.
     /// </summary>
     private async Task<HttpResponseMessage> Reach(Endpoint endpoint, string path, string? json)
     {
@@ -311,30 +297,27 @@ public sealed class MapService : IDisposable
     }
 
     /// <summary>
-    /// One plugin's registration. Null where the service took it, and what it
-    /// said where it did not.
+    /// Registers one plugin with the service. Returns null when the service took
+    /// it, and the complaint when it did not.
     ///
-    /// The whole of what <see cref="WitchlightPlugins"/> needs from this class:
-    /// the address, the token and the recovery from both moving already live
-    /// here, and a plugin gets at them by going through rather than by being
-    /// handed a copy of any of it.
+    /// <see cref="WitchlightPlugins"/> posts through this class rather than
+    /// holding its own copy of the address and token.
     /// </summary>
     public Task<string?> PluginRegister(string id, string shape) =>
         Told($"/plugins/register/{id}", shape);
 
-    /// <summary>Rows from a plugin's collector. Null where they landed.</summary>
+    /// <summary>Posts rows from a plugin's collector. Returns null when they landed.</summary>
     public Task<string?> PluginStore(string id, string body) =>
         Told($"/plugins/data/{id}", body);
 
     /// <summary>
-    /// What the service is holding for one plugin, as JSON, or null where it
+    /// Returns what the service holds for one plugin, as JSON, or null when it
     /// could not be asked.
     ///
-    /// On the map's own port rather than the API channel, because this is the
-    /// same question a browser asks and the same answer. Without a session,
-    /// which for an owner-scoped plugin means an empty list — a plugin reading
-    /// its own rows back does so to migrate them, and that is a thing the mod
-    /// does on the service's own side rather than on anybody's behalf.
+    /// Reads the map's own port rather than the API channel, because a browser
+    /// asks the same question there and gets the same answer. Sends no session,
+    /// so an owner-scoped plugin reads an empty list. A plugin reads its own rows
+    /// back to migrate them.
     /// </summary>
     public async Task<string?> PluginQuery(string id, string query)
     {
@@ -367,11 +350,8 @@ public sealed class MapService : IDisposable
     }
 
     /// <summary>
-    /// A post of JSON already written, and what came back where it was refused.
-    ///
-    /// Null means it landed, which reads oddly until it is read as the answer to
-    /// "what went wrong" — and it is that, because every caller of this wants
-    /// the complaint rather than the reply.
+    /// Posts JSON that is already written. Returns the complaint when the service
+    /// refused it, and null when it landed.
     /// </summary>
     private async Task<string?> Told(string path, string json)
     {
@@ -400,8 +380,8 @@ public sealed class MapService : IDisposable
     }
 
     /// <summary>
-    /// Asks the service for a login word for one player, and gives back the whole
-    /// address to hand them — or null where there is none to give.
+    /// Asks the service to mint a login token for one player, and returns the
+    /// whole address to hand them. Returns null when there is none to give.
     /// </summary>
     public async Task<string?> Link(string uid, string name, string where)
     {
@@ -424,46 +404,42 @@ public sealed class MapService : IDisposable
     }
 
     /// <summary>
-    /// What one player has set for themselves on the map: their presets, and
-    /// where a new marker of theirs starts.
+    /// Returns what one player has set for themselves on the map: their presets,
+    /// and where a new marker of theirs starts.
     ///
-    /// The map's own form reads this over the public port under a session cookie.
-    /// A game client has neither, so the mod asks on its behalf — it is the only
-    /// party that knows which uid is which player, which is the same trust
-    /// minting a login word already needs.
+    /// The web form reads this over the public port under a session cookie. A
+    /// game client has no cookie, so the mod asks on its behalf. The mod is the
+    /// only party that knows which uid is which player, which is the same trust
+    /// minting a login token already needs.
     ///
-    /// Asked at the moment somebody marks something rather than held and
-    /// refreshed. A preset made in a browser a minute ago must apply to the next
-    /// press of the key, and a cache with a clock on it is a cache that is wrong
-    /// for exactly as long as that clock says.
+    /// Asks at the moment somebody marks something rather than caching. A preset
+    /// made in a browser a minute ago has to apply to the next press of the key.
     /// </summary>
     public Task<string?> Presets(string uid) => Ask("/presets/of", new { Uid = uid });
 
     /// <summary>
-    /// Keeps one preset for one player, and gives back everything they have set.
+    /// Saves one preset for one player, and returns everything they have set.
     ///
-    /// One preset rather than the whole document: this side knows the one made in
-    /// front of somebody in game and nothing else about what they have kept, and
-    /// writing a whole document back from that would delete every preset they
-    /// made in a browser.
+    /// Sends one preset rather than the whole document. The mod knows only the
+    /// preset made in game, so writing a whole document back would delete every
+    /// preset the player made in a browser.
     /// </summary>
     public Task<string?> KeepPreset(string uid, object preset) =>
         Ask("/presets/keep", new { Uid = uid, Preset = preset });
 
     /// <summary>
-    /// Takes everything somebody asked for on the web — the markers, and the
-    /// land claims — and leaves the service holding none.
+    /// Collects the markers and land claims players asked for on the web, and
+    /// leaves the service holding none.
     ///
-    /// The channel between the halves only runs one way — the mod posts, the
-    /// service answers — so a marker typed into the web form cannot be pushed at
-    /// the game and waits to be collected instead. Collecting empties the queue,
-    /// which means a reply that never reaches the caller loses what was in it;
-    /// that is the right trade for a marker, where asking again is one more form
-    /// and holding one twice is two markers on the map.
+    /// The mod posts and the service answers, so the service cannot push a marker
+    /// typed into the web form at the game. It queues it to be collected instead.
+    /// Collecting empties the queue, so a reply that never reaches the caller
+    /// loses what was in it. That is the right trade for a marker, since asking
+    /// again is one more form while holding one twice puts two markers on the map.
     ///
-    /// Null where there is nothing to say, including where the service is not
-    /// answering. One request at a time: the tick that asks is faster than a round
-    /// trip on a busy server, and asking twice would collect the same queue twice.
+    /// Returns null when there is nothing to collect or the service is not
+    /// answering. Runs one request at a time, because the tick that asks is
+    /// faster than a round trip on a busy server.
     /// </summary>
     public async Task<string?> Pending()
     {
@@ -474,9 +450,9 @@ public sealed class MapService : IDisposable
 
         try
         {
-            // Quietly: this rides the two-second tick, and a service that is down
-            // would otherwise say so thirty times a minute. The other three asks
-            // happen because somebody typed or pressed something and is owed the
+            // Fail quietly. This rides the two-second tick, and a service that
+            // is down would otherwise log thirty times a minute. The other three
+            // requests run because somebody pressed something and is owed the
             // reason out loud.
             return await Ask("/pending", quietly: true).ConfigureAwait(false);
         }
@@ -486,18 +462,16 @@ public sealed class MapService : IDisposable
         }
     }
 
-    /// <summary>Who is online and where. Held in memory by the service.</summary>
+    /// <summary>Posts who is online and where. The service holds it in memory.</summary>
     public void Players(string json) => Post(_players, json);
 
     /// <summary>
-    /// Every land claim, with who may be shown them.
+    /// Posts every land claim, with the uids of who may be shown them.
     ///
-    /// Sent whenever it is not what was sent last, exactly as the markers are and
-    /// for the same reason: claims change a few times a week and this is the bulk
-    /// of what there is to send. Unlike the markers there is no slow resend to
-    /// heal a service that restarted, because there is nothing on its side to be
-    /// stale — it holds none of this on disk, so a service that restarts has no
-    /// claims at all and the resend below covers it.
+    /// Sends only when the feed differs from what was sent last. Claims change a
+    /// few times a week and make up the bulk of what there is to send. There is
+    /// no slow resend, because the service keeps no claims on disk and a service
+    /// that restarts holds none at all.
     /// </summary>
     public void Claims(string json)
     {
@@ -510,51 +484,50 @@ public sealed class MapService : IDisposable
         Post(_claims, json);
     }
 
-    /// <summary>What the world's clock says, on its way to whoever is looking.</summary>
+    /// <summary>Posts the world's clock, on its way to whoever is looking.</summary>
     public void World(string json) => Post(_world, json);
 
     /// <summary>
-    /// The ground: chunks whose surface moved, as records, and chunks whose
-    /// season turned. Into the service's own database and out to every browser
-    /// at once — see the service's `apiport.rs`.
-    ///
-    /// `failed` is called where the post did not land, from the thread that
-    /// found out. The exporter puts the chunks back to be sent again; a
-    /// position can be skipped but the ground cannot.
+    /// Posts the ground: chunks whose surface moved, as records, and chunks whose
+    /// season turned. The service writes them to its database and sends them to
+    /// every browser. See the service's `apiport.rs`.
     /// </summary>
+    /// <param name="failed">
+    /// Called from the posting thread when the post did not land. The exporter
+    /// puts the chunks back to be sent again, because a position can be skipped
+    /// but the ground cannot.
+    /// </param>
     public void Terrain(string json, Action failed) => Post(_terrain, json, failed);
 
     /// <summary>
-    /// What the service already holds, for an exporter that has just started:
-    /// the checksum and season of every chunk, so a chunk loading again is not
-    /// read and sent for nothing. Null where the service is not answering yet,
-    /// which is ordinary — this mod is what starts it.
+    /// Returns the checksum and season of every chunk the service already holds,
+    /// so an exporter that has just started does not read and send a chunk again
+    /// for nothing. Returns null when the service is not answering yet, which is
+    /// ordinary while the mod is still starting it.
     /// </summary>
     public Task<string?> Held() => Ask("/terrain/held", quietly: true);
 
     /// <summary>
-    /// Every marker, when they are not what was sent last.
+    /// Posts every marker, when the feed differs from what was sent last.
     ///
-    /// Markers change a few times an hour and are the bulk of what there is to
-    /// send, so posting them on the same timer as positions would be the same
-    /// tens of kilobytes over and over.
+    /// Markers change a few times an hour and make up the bulk of what there is
+    /// to send, so posting them on the position timer would resend tens of
+    /// kilobytes over and over.
     /// </summary>
     public void Markers(string json)
     {
-        // What was sent last is a belief about the service, not a fact about it.
-        // A service that restarts having lost its markers still gets the same
-        // unchanged list offered, and skipping it leaves the map without markers
-        // for as long as nobody moves one — which is to say, indefinitely. So the
-        // list goes again on a slow timer whether or not it has changed, and the
-        // desync heals itself within one interval.
+        // Resend on a slow timer whether or not the list changed. A service that
+        // restarted and lost its markers is still offered the same unchanged
+        // list, and skipping it would leave the map without markers until
+        // somebody moved one. The resend heals that within one interval.
         var overdue = DateTime.UtcNow - _markersSentAt >= _resendMarkers;
         if (json == _sentMarkers && !overdue)
         {
             return;
         }
 
-        // Recorded when it lands, not when it is attempted. A post dropped because
-        // the last one is still in flight would otherwise be remembered as sent.
+        // Record the send when it lands, not when it is attempted. A post
+        // dropped because the last is still in flight is not a send.
         Post(_markers, json);
     }
 
@@ -568,8 +541,9 @@ public sealed class MapService : IDisposable
 
         _ = Task.Run(async () =>
         {
-            // Read again where the last attempt found nothing. The service may
-            // simply not have finished starting; it is the mod that started it.
+            // Read the connection file again when the last attempt found
+            // nothing. The service the mod started may not have finished
+            // binding.
             var endpoint = Where();
             if (endpoint is null)
             {
@@ -586,9 +560,9 @@ public sealed class MapService : IDisposable
             }
             catch (Exception error)
             {
-                // The service being down is ordinary — it is a separate program
-                // and the game does not depend on it. Its address is dropped with
-                // it, so the next tick reads where the next one bound.
+                // A service that is down is ordinary, since it is a separate
+                // program the game does not depend on. Drop its address so the
+                // next tick reads where the next one bound.
                 _endpoint = null;
                 Complain(feed, $"could not reach {endpoint.Url}: {error.Message}");
             }
@@ -613,8 +587,8 @@ public sealed class MapService : IDisposable
             return false;
         }
 
-        // Recorded when it lands rather than when it is attempted, so a post
-        // dropped because the last was still in flight is not remembered as sent.
+        // Record the send when it lands, not when it is attempted, so a post
+        // dropped because the last was still in flight is not a send.
         if (feed == _markers)
         {
             _sentMarkers = json;
@@ -630,7 +604,8 @@ public sealed class MapService : IDisposable
         return true;
     }
 
-    /// <summary>Says it landed, and says so out loud only for the first one back.</summary>
+    /// <summary>Records that a post landed, and logs the recovery only for the
+    ///  first feed back.</summary>
     private void Recovered(Feed feed, string what)
     {
         lock (_reporting)
@@ -644,12 +619,12 @@ public sealed class MapService : IDisposable
             _complained = false;
         }
 
-        // Said outside the lock: the decision is what has to be atomic, and a
-        // logger is somebody else's I/O to be holding a lock across.
+        // Log outside the lock. The decision is what has to be atomic, and a
+        // logger does I/O this must not hold a lock across.
         _log.Notification("[witchlight] the map service is taking live data again");
     }
 
-    /// <summary>Says it once, and says when it stops being true.</summary>
+    /// <summary>Records that a post failed, and logs the fault only once.</summary>
     private void Complain(Feed feed, string what)
     {
         lock (_reporting)

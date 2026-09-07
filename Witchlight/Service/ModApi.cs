@@ -11,23 +11,19 @@ using Vintagestory.API.Server;
 namespace Witchlight;
 
 /// <summary>
-/// The private channel the map service pulls terrain on.
+/// Answers the map service's requests for terrain.
 ///
-/// Everything else between the two halves is a file the mod writes on its own
-/// clock, or a post the mod sends on its own clock — this is the one channel
-/// where the service asks and the mod answers. What used to decide which
-/// columns to ask the game for, in what order and how fast, lived here in the
-/// mod as <c>Backfill</c>; the service holds the whole map already and is where
-/// a request for one more column belongs, so this exists only to answer it.
-/// <see cref="Repair"/> is unrelated to that and still lives in the mod: it
-/// heals columns the map once held and lost, which is a narrower question this
-/// channel has no part in.
+/// This is the one channel where the service asks and the mod answers.
+/// Everything else between the halves is a file or a post the mod sends on its
+/// own clock. The service holds the whole map and decides which columns to ask
+/// for, in what order and how fast. This class only answers those requests.
+/// <see cref="Repair"/> is separate: it heals columns the map once held and lost.
 ///
-/// The listener is loopback, on a port the machine picks, the same reasoning
-/// <see cref="MapService"/>'s own channel already rests on — nothing off this
-/// machine can reach it, and nothing on it can ask without a token published in
-/// a file only this mod's owner can read. Published in `mod-api.json` beside the
-/// map, the mirror of the service's own `api.json`.
+/// The listener binds loopback on a port the machine picks, so nothing off this
+/// machine can reach it, and a caller must present a token published in a file
+/// only this mod's owner can read. <see cref="MapService"/>'s own channel rests
+/// on the same reasoning. The address goes in `mod-api.json` beside the map,
+/// mirroring the service's `api.json`.
 /// </summary>
 public sealed class ModApi : IDisposable
 {
@@ -63,15 +59,13 @@ public sealed class ModApi : IDisposable
         _listener = new HttpListener();
     }
 
-    /// <summary>Starts listening, and publishes where. Safe to call once.</summary>
+    /// <summary>Starts the listener and publishes its port. Call once.</summary>
     public void Start()
     {
-        // `HttpListener` takes a prefix, not a socket, and has no way to ask what
-        // port a wildcard bound to — so a free one is found the way anything else
-        // on this machine would, by asking a socket for one and closing it before
-        // the listener claims the same number. A window exists between the two
-        // where something else could take it; a service on a box with something
-        // else furiously binding ephemeral ports has larger problems than this.
+        // `HttpListener` takes a prefix, not a socket, and cannot report what
+        // port a wildcard bound to. So find a free port with a throwaway socket
+        // and close it before the listener claims the same number. Something else
+        // could take the port in the window between the two.
         int port;
         using (var probe = new System.Net.Sockets.TcpListener(IPAddress.Parse(_host), 0))
         {
@@ -109,10 +103,9 @@ public sealed class ModApi : IDisposable
                 continue;
             }
 
-            // One request at a time is enough: a column request is a handful of
-            // main-thread work, and the service already paces how many it asks
-            // for at once. A thread apiece would only let more of them queue up
-            // on the main thread behind one another regardless.
+            // One request at a time is enough. A column request is a small piece
+            // of main-thread work, and the service paces how many it asks for at
+            // once. More threads would only queue more work on the main thread.
             Task.Run(() => Handle(context));
         }
     }
@@ -168,9 +161,10 @@ public sealed class ModApi : IDisposable
     }
 
     /// <summary>
-    /// One column's surface, read on the main thread because everything the game
-    /// answers this with — the map chunk, the blocks under it — is only safe to
-    /// read there.
+    /// Answers with one column's surface.
+    ///
+    /// Reads on the main thread, because the map chunk and the blocks under it
+    /// are only safe to read there.
     /// </summary>
     private void HandleColumn(HttpListenerContext context, int cx, int cz)
     {
@@ -207,9 +201,8 @@ public sealed class ModApi : IDisposable
     }
 
     /// <summary>
-    /// Runs game-API work on the server's main thread, the way <see cref="Repair"/>
-    /// already had to: the game's own chunk and column reads are not safe from a
-    /// thread pool worker.
+    /// Runs game-API work on the server's main thread. The game's chunk and
+    /// column reads are not safe from a thread pool worker.
     /// </summary>
     private void OnGameThread(Action work) => _api.Event.EnqueueMainThreadTask(work, "witchlight-terrain-pull");
 
@@ -243,15 +236,15 @@ public sealed class ModApi : IDisposable
             Port = port,
             Token = _token,
             Version = typeof(ModApi).Assembly.GetName().Version?.ToString() ?? "",
-            // What the game itself already limits chunk loading to, so the
-            // puller's own default reach is never wider than ground a player
-            // standing there could ever have caused to load in the first place.
+            // The limit the game puts on chunk loading. It keeps the puller's
+            // default reach no wider than the ground a player standing there
+            // could have loaded.
             MaxChunkRadius = _api.Server.Config.MaxChunkRadius,
         });
         Disk.Write(PathIn(_exports), body);
     }
 
-    /// <summary>Where the service should look to learn where this is listening.</summary>
+    /// <summary>Returns the path of the file naming the port this listens on.</summary>
     public static string PathIn(string exports) => System.IO.Path.Combine(exports, "mod-api.json");
 
     public void Dispose()
@@ -273,9 +266,8 @@ public sealed class ModApi : IDisposable
         }
         catch (Exception)
         {
-            // A published address nothing will read again is harmless left
-            // behind — the next start overwrites it — but worth clearing so a
-            // stale file cannot outlive the listener it named.
+            // The next start overwrites the file, so a leftover is harmless.
+            // Deleting it keeps a stale address from outliving its listener.
         }
     }
 }

@@ -4,11 +4,10 @@ using Newtonsoft.Json;
 namespace Witchlight;
 
 /// <summary>
-/// What a column may hold.
+/// The types a plugin's column may hold.
 ///
-/// A closed set, because these names are written into the table the service
-/// makes and the only safe way to put a plugin's word into SQL is to not put it
-/// there. A plugin picks one of these; the service spells it.
+/// A closed set. These names go into the table the service creates, and a plugin
+/// picks one rather than supplying a word that would reach SQL.
 /// </summary>
 public enum PluginKind
 {
@@ -24,24 +23,23 @@ public enum PluginScope
     /// <summary>Each row belongs to one player, who may share it with a group.</summary>
     Owner,
 
-    /// <summary>Everybody's, like the terrain.</summary>
+    /// <summary>Every row is visible to everybody, like the terrain.</summary>
     World,
 }
 
 /// <summary>
-/// What a plugin says its rows look like.
+/// The shape a plugin declares for its rows.
 ///
-/// The whole of what a plugin tells the service about its storage. The service
-/// makes the table from this, adds <c>owner_uid</c> itself and puts it at the
-/// front of the key, and composes every statement — so a plugin describes its
-/// own storage without ever being handed the ability to write SQL.
+/// This is everything a plugin tells the service about its storage. The service
+/// creates the table from it, adds <c>owner_uid</c> itself at the front of the
+/// key, and composes every statement, so a plugin describes its storage without
+/// writing SQL.
 ///
-/// Declared once, in the plugin's <c>Start</c>, and passed to
+/// Declared once in the plugin's <c>Start</c> and passed to
 /// <see cref="WitchlightPlugins.Register"/>. Registering again with the same
-/// shape costs a lookup. Registering with a column added carries the rows
-/// already there. Anything else that moved is refused with the data left alone,
-/// and the plugin migrates it itself with
-/// <see cref="WitchlightPlugins.Query"/> and
+/// shape costs a lookup. Registering with a column added keeps the rows already
+/// there. Any other change is refused with the data left alone, and the plugin
+/// migrates it itself with <see cref="WitchlightPlugins.Query"/> and
 /// <see cref="WitchlightPlugins.StoreMany"/>.
 /// </summary>
 public sealed class PluginShape
@@ -51,21 +49,20 @@ public sealed class PluginShape
     public Dictionary<string, string> Columns { get; } = new();
 
     /// <summary>
-    /// Which columns identify a row, in the order they are given.
+    /// The columns that identify a row, in the order they are given.
     ///
-    /// <c>owner_uid</c> is added by the service and comes first; it is never
-    /// named here. A row written again with the same key replaces the one
-    /// already there.
+    /// The service adds <c>owner_uid</c> at the front, so never name it here. A
+    /// row written again with the same key replaces the one already there.
     /// </summary>
     [JsonProperty("key")]
     public List<string> Key { get; } = new();
 
     /// <summary>
-    /// Which columns a reader may ask ranges of, as <c>?x=-1000..1000</c>.
+    /// The columns a reader may ask ranges of, as <c>?x=-1000..1000</c>.
     ///
-    /// The service builds the index that makes those cheap, and refuses a range
-    /// asked of anything not named here — a range answered without an index is
-    /// how a map goes quiet under load.
+    /// The service builds an index for each one and refuses a range asked of a
+    /// column not named here. A range answered without an index makes a map go
+    /// quiet under load.
     /// </summary>
     [JsonProperty("ranged")]
     public List<string> Ranged { get; } = new();
@@ -73,7 +70,7 @@ public sealed class PluginShape
     [JsonProperty("scope")]
     public string Scope { get; private set; } = "owner";
 
-    /// <summary>Adds a column.</summary>
+    /// <summary>Adds a column and returns this shape.</summary>
     public PluginShape Column(string name, PluginKind kind)
     {
         Columns[name] = kind switch
@@ -86,7 +83,7 @@ public sealed class PluginShape
         return this;
     }
 
-    /// <summary>Names the columns that identify a row.</summary>
+    /// <summary>Sets the columns that identify a row and returns this shape.</summary>
     public PluginShape KeyedBy(params string[] columns)
     {
         Key.Clear();
@@ -94,7 +91,7 @@ public sealed class PluginShape
         return this;
     }
 
-    /// <summary>Names the columns a range may be asked of.</summary>
+    /// <summary>Sets the columns a range may be asked of and returns this shape.</summary>
     public PluginShape RangedBy(params string[] columns)
     {
         Ranged.Clear();
@@ -102,7 +99,7 @@ public sealed class PluginShape
         return this;
     }
 
-    /// <summary>Says who may see these rows.</summary>
+    /// <summary>Sets who may see these rows and returns this shape.</summary>
     public PluginShape SeenBy(PluginScope scope)
     {
         Scope = scope == PluginScope.World ? "world" : "owner";

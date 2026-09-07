@@ -4,28 +4,28 @@ using ProtoBuf;
 
 namespace Witchlight;
 
-/// <summary>Sent on join, carrying what the server already has, so a client
-///  answers with only the pictures it is missing — and with nothing at all once
-///  the set is complete.</summary>
+/// <summary>Asks a client for marker pictures. The server sends this on join
+/// carrying what it already has, so the client answers with only what is
+/// missing, and with nothing once the set is complete.</summary>
 [ProtoContract]
 public class IconRequest
 {
-    /// <summary>Icons the server already has, so a client sends only what is new.</summary>
+    /// <summary>Lists the icons the server already has, so a client sends only what is new.</summary>
     [ProtoMember(1)]
     public List<string> Have { get; set; } = new();
 }
 
 /// <summary>
-/// Marker pictures on the wire, in slices.
+/// Carries marker pictures on the wire, in slices.
 ///
-/// A dedicated server ships no SVG at all — its `textures` directory is there but
-/// empty of them — so the pictures a marker is drawn with can only come from a
-/// machine that has the game's art. Same shape as the palette, and for the same
-/// reason: the server cannot build this itself and a client can.
+/// A dedicated server ships no SVG files. Its `textures` directory exists and
+/// holds none, so the pictures a marker is drawn with can only come from a
+/// machine that has the game's art. This takes the same shape as the palette for
+/// the same reason.
 ///
-/// Sliced by measured size rather than by count. An oversized packet does not
-/// fail politely, it disconnects the player sending it, and how many icons a mod
-/// set adds is not something this end gets to assume.
+/// The slicing goes by measured size rather than by count. An oversized packet
+/// disconnects the player sending it, and this end cannot assume how many icons a
+/// mod set adds.
 /// </summary>
 [ProtoContract]
 public class IconTable
@@ -33,20 +33,20 @@ public class IconTable
     [ProtoMember(1)] public int Part { get; set; }
     [ProtoMember(2)] public int Parts { get; set; }
 
-    /// <summary>Icon names, in step with <see cref="Svgs"/>.</summary>
+    /// <summary>The icon names, in step with <see cref="Svgs"/>.</summary>
     [ProtoMember(3)] public List<string> Names { get; set; } = new();
 
-    /// <summary>Each icon's file, in step with <see cref="Names"/>.</summary>
+    /// <summary>The icon files, in step with <see cref="Names"/>.</summary>
     [ProtoMember(4)] public List<byte[]> Svgs { get; set; } = new();
 
     /// <summary>
-    /// How much one packet may carry. Far below what a server will accept, and
-    /// chosen against the bytes rather than a count of icons, because an icon is
-    /// a file of unknown size and a mod may ship a large one.
+    /// Sets how much one packet may carry. This sits far below what a server will
+    /// accept and is measured in bytes rather than icons, because an icon is a
+    /// file of unknown size and a mod may ship a large one.
     /// </summary>
     public const int SliceBytes = 400 * 1024;
 
-    /// <summary>The most one icon may be. Beyond this it is not a map marker.</summary>
+    /// <summary>Sets the largest one icon may be. Anything beyond this is not a map marker.</summary>
     public const int LargestIcon = 256 * 1024;
 
     /// <summary>Splits a set of icons into packets a server will accept.</summary>
@@ -89,7 +89,7 @@ public class IconTable
         return slices;
     }
 
-    /// <summary>Every name and file across a full set of slices, ready to write.</summary>
+    /// <summary>Collects every name and file across a full set of slices, ready to write.</summary>
     public static List<(string Name, byte[] Svg)> Assemble(IEnumerable<IconTable> slices)
     {
         var all = new List<(string, byte[])>();

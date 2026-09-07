@@ -7,25 +7,25 @@ using Vintagestory.API.Config;
 namespace Witchlight;
 
 /// <summary>
-/// The two things a client has that a dedicated server does not.
+/// Supplies the palette and the marker pictures, which a dedicated server cannot
+/// build for itself.
 ///
 /// A dedicated server's install ships 46 block textures against a full game's
-/// 9,587, and no marker art at all. So the palette and the marker pictures can
-/// only come from a machine with the game's assets on it — and while a client is
-/// connected it also holds the block ids that server assigned, so what it builds
-/// lines up with that server's exports.
+/// 9,587, and no marker art at all. So both can only come from a machine with the
+/// game's assets on it. A connected client also holds the block ids that server
+/// assigned, so what it builds lines up with that server's exports.
 ///
-/// Nothing here is sent unprompted: the server asks and this answers. Who it asks
-/// is the server's business — anybody, where it has nothing, since a server whose
-/// operator never joins in game would otherwise have no map at all. What a
-/// non-admin sends can only fill gaps, which is decided on that side.
+/// Sends nothing unprompted. The server asks and this answers. The server decides
+/// who to ask, and asks anybody where it has nothing, since a server whose operator
+/// never joins in game would otherwise have no map. The server also decides that
+/// what a non-admin sends can only fill gaps.
 /// </summary>
 public partial class WitchlightClient
 {
     /// <summary>
     /// Builds a palette and sends it, because the server asked.
     ///
-    /// Asked only when the server could not build a usable one itself, which is
+    /// The server asks only when it could not build a usable one itself, which is
     /// the normal case on a dedicated server.
     /// </summary>
     private void OnPaletteRequest(PaletteRequest request)
@@ -43,9 +43,9 @@ public partial class WitchlightClient
             if (palette.Fingerprint != request.Fingerprint)
             {
                 // The registry this client holds is not the one the server asked
-                // about, so its block ids would be wrong. Said out loud rather
-                // than only in a log file, since nothing else would explain the
-                // map staying empty.
+                // about, so its block ids would be wrong. Reported in chat as well
+                // as the log, since nothing else would explain the map staying
+                // empty.
                 var message =
                     $"[witchlight] cannot supply a palette: this client's block registry "
                     + $"({palette.Fingerprint}) is not the server's ({request.Fingerprint})";
@@ -73,7 +73,7 @@ public partial class WitchlightClient
 
     /// <summary>
     /// Builds the palette from this client's assets and writes it beside this
-    /// machine's own world data, for an operator moving it across by hand.
+    /// machine's own world data, for an operator to move across by hand.
     /// </summary>
     private TextCommandResult OnPalette(TextCommandCallingArgs args)
     {
@@ -106,9 +106,9 @@ public partial class WitchlightClient
     /// <summary>
     /// Sends the marker pictures, because the server asked.
     ///
-    /// Only what the server says it is missing, so a mod added later costs one
-    /// icon rather than the whole set again — and a server that already has them
-    /// all is sent nothing at all.
+    /// Sends only what the server says it is missing, so a mod added later costs
+    /// one icon rather than the whole set, and a server that has them all is sent
+    /// nothing.
     /// </summary>
     private void OnIconRequest(IconRequest request)
     {
@@ -123,7 +123,8 @@ public partial class WitchlightClient
             : TextCommandResult.Error("this client has no marker pictures to send");
     }
 
-    /// <summary>Reads every icon this client can see and sends what the server lacks.</summary>
+    /// <summary>Reads every icon this client can see and sends the ones the server
+    ///  lacks.</summary>
     private int SendIcons(HashSet<string> already, bool quiet)
     {
         if (_capi is not { } capi)

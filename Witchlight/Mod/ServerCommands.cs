@@ -14,7 +14,7 @@ namespace Witchlight;
 /// The same class as the rest of the mod system rather than a type of its own: a
 /// command surface is a view of the whole system, and a separate type would only
 /// mean handing that type every field this one already has. What it is kept apart
-/// from is the wiring — nothing here decides when anything runs.
+/// from is the wiring. Nothing here decides when anything runs.
 ///
 /// Who may run which of them is not decided here either. Every subcommand is
 /// registered under the privilege the settings give it, which is one table in
@@ -78,7 +78,7 @@ public partial class WitchlightSystem
     /// Sends one player a link that logs their browser in as them.
     ///
     /// The game is the only place identity exists, and this is the only channel
-    /// that reaches a particular person — so the link is minted on the service's
+    /// that reaches a particular person. So the link is minted on the service's
     /// private channel, which nothing but this mod can reach, and handed over in
     /// a message only its owner sees.
     ///
@@ -123,7 +123,7 @@ public partial class WitchlightSystem
     /// Marks where a player is looking, from the slash side of the command tree.
     ///
     /// The game keeps client and server commands in separate registries, so
-    /// `/witchlight mark` and `.witchlight mark` are two commands — and a slash
+    /// `/witchlight mark` and `.witchlight mark` are two commands, and a slash
     /// is what anybody types first. They are not two behaviours: which block
     /// somebody is looking at exists only on their own machine, so this asks that
     /// machine rather than answering a poorer version from where they stand.
@@ -224,7 +224,7 @@ public partial class WitchlightSystem
             $"waiting: {_exporter?.Waiting ?? 0} columns changed since then",
             // Named separately from the line above because it is a different kind
             // of waiting: those columns are work in hand, and these are work the
-            // server has to be asked for before it can be done at all — a chunk
+            // server has to be asked for before it can be done at all: a chunk
             // whose blocks had gone when the map wanted them back.
             $"owed: {_exporter?.Withheld ?? 0} columns to ask the server for",
             // Only while one is running. A seed is a state a server passes through
@@ -239,7 +239,7 @@ public partial class WitchlightSystem
     /// <summary>
     /// The map service, from in game: whether it is up, and up or down on demand.
     ///
-    /// Starting is deliberate and does not consult `autostart` — that setting says
+    /// Starting is deliberate and does not consult `autostart`. That setting says
     /// who starts it unasked, and somebody typing the command has asked.
     /// </summary>
     private TextCommandResult OnService(TextCommandCallingArgs args)
@@ -322,7 +322,7 @@ public partial class WitchlightSystem
     /// The setting says who may start the request and nothing about whom it may
     /// be sent to: anyone with the mod can be asked, and the server asks round
     /// the room on its own with no privilege in hand. What guards the map either
-    /// way is what is done with the answer — only an admin's replaces a colour
+    /// way is what is done with the answer. Only an admin's replaces a colour
     /// somebody already chose.
     /// </summary>
     private TextCommandResult Asking(

@@ -9,35 +9,33 @@ using Vintagestory.GameContent;
 namespace Witchlight;
 
 /// <summary>
-/// One thing this mod knows about a waypoint that the game does not, kept beside
-/// the waypoints in the savegame.
+/// Stores one fact per waypoint that the game does not keep, in the savegame
+/// beside the waypoints.
 ///
-/// A waypoint has fields for what the game has ever needed. Sharing is this mod's
-/// idea, and so is the block a marker was put on, so those answers are this mod's
-/// to keep — and they are kept in the savegame rather than in files of their own
-/// because they are properties of a waypoint, and two stores that can be lost
-/// separately are two stores that can disagree. A world that loses its waypoints
-/// loses these with them.
+/// A waypoint carries the fields the game needs. Sharing and the block a marker
+/// was put on are this mod's ideas, so this mod keeps those answers. They live in
+/// the savegame rather than in files of their own because they are properties of a
+/// waypoint, and two stores that can be lost separately can disagree. A world that
+/// loses its waypoints loses these with them.
 ///
-/// The mechanism is here and the meaning is in whatever holds one: reading a
-/// store back, writing it when it has changed, and dropping what it says about
-/// waypoints that no longer exist are the same three jobs whatever is being
-/// remembered, and they were written out once per subject.
+/// This class holds the mechanism and its users hold the meaning. Reading a store
+/// back, writing it when it has changed, and dropping what it says about waypoints
+/// that no longer exist are the same three jobs whatever is being remembered.
 ///
-/// **Only what somebody actually decided is stored.** A waypoint nothing has been
-/// said about is simply absent, and its owner reads that as the operator's
-/// default or as nothing known — so a store holds one entry per answer rather
-/// than one per marker, and stays empty on a server where nobody uses the map.
+/// **Only an answer somebody actually gave is stored.** A waypoint nothing has
+/// been said about is absent, and its owner reads that absence as the operator's
+/// default or as nothing known. So a store holds one entry per answer rather than
+/// one per marker, and stays empty on a server where nobody uses the map.
 /// </summary>
 public sealed class Beside<T>
 {
     private readonly string _key;
 
-    /// <summary>Waypoint guid to what is known about it.</summary>
+    /// <summary>What is known about each waypoint, by guid.</summary>
     private readonly Dictionary<string, T> _held;
 
-    /// <summary>Whether anything has changed since the last write. Writes are
-    ///  earned: a save that would store what is already stored does not.</summary>
+    /// <summary>True when something has changed since the last write. A save that
+    ///  would store what is already stored does not write.</summary>
     private bool _unsaved;
 
     private Beside(string key, Dictionary<string, T> held)
@@ -47,9 +45,10 @@ public sealed class Beside<T>
     }
 
     /// <summary>
-    /// A store holding nothing, which is every waypoint on whatever the absence
-    /// means. What the mod holds before the world is up: the savegame cannot be
-    /// read then, and a null store would put a check at every use of it.
+    /// An empty store, in which every waypoint reads as the absence of an answer.
+    ///
+    /// The mod holds this before the world is up, when the savegame cannot be read.
+    /// A null store would put a check at every use.
     /// </summary>
     public static Beside<T> Empty(string key) =>
         new(key, new Dictionary<string, T>(StringComparer.Ordinal));
@@ -58,9 +57,8 @@ public sealed class Beside<T>
     public int Count => _held.Count;
 
     /// <summary>
-    /// What a previous run stored. An unreadable store is an empty one: every
-    /// waypoint then falls back to whatever the absence of an answer means, which
-    /// is the only honest thing to do with bytes that cannot be read.
+    /// Reads back what a previous run stored. Returns an empty store when the bytes
+    /// cannot be read, so every waypoint falls back to the absence of an answer.
     /// </summary>
     public static Beside<T> Read(ICoreServerAPI api, string key, string called)
     {
@@ -86,17 +84,18 @@ public sealed class Beside<T>
     }
 
     /// <summary>
-    /// Stores what is held, when it is not what is already stored.
+    /// Writes what is held, when it is not what is already stored.
     ///
-    /// Answers about waypoints that no longer exist go first, so deleting a
-    /// marker eventually takes what was said about it too rather than leaving the
-    /// store growing by one entry for every marker the server has ever had.
-    ///
-    /// Null is "the waypoints could not be read", which is emphatically not
-    /// "there are none": standing an empty list in for it would forget every
-    /// answer on the server the first time a save landed while the map layer was
-    /// not up. Nothing is forgotten unless the live list is in hand.
+    /// Drops answers about waypoints that no longer exist first, so deleting a
+    /// marker eventually takes what was said about it and the store does not grow
+    /// by one entry for every marker the server has ever had.
     /// </summary>
+    /// <param name="live">
+    /// The waypoints that still exist, or null when they could not be read. Null
+    /// does not mean there are none, so this forgets nothing without the live list.
+    /// Treating null as an empty list would forget every answer on the server the
+    /// first time a save landed while the map layer was down.
+    /// </param>
     public void Write(ICoreServerAPI api, IEnumerable<Waypoint>? alive, string called)
     {
         if (alive is not null)
@@ -121,15 +120,15 @@ public sealed class Beside<T>
         }
     }
 
-    /// <summary>What is known about this waypoint, or nothing.</summary>
+    /// <summary>Returns what is known about one waypoint, or null.</summary>
     public bool Knows(string? guid, out T held)
     {
         held = default!;
         return !string.IsNullOrEmpty(guid) && _held.TryGetValue(guid, out held!);
     }
 
-    /// <summary>Records what is known about one waypoint. An answer that is
-    ///  already the one held is not a change and does not earn a write.</summary>
+    /// <summary>Records what is known about one waypoint. An answer already held
+    ///  is not a change and does not trigger a write.</summary>
     public void Say(string? guid, T said)
     {
         if (string.IsNullOrEmpty(guid))
@@ -145,10 +144,11 @@ public sealed class Beside<T>
         _unsaved = true;
     }
 
-    /// <summary>Every waypoint this knows about, by guid, for a feed to hand on.</summary>
+    /// <summary>Returns everything this knows, by waypoint guid, for a feed to
+    ///  hand on.</summary>
     public IReadOnlyDictionary<string, T> All => _held;
 
-    /// <summary>Drops what is said about waypoints that are no longer on the map.</summary>
+    /// <summary>Drops what is stored about waypoints that no longer exist.</summary>
     private void Forget(IEnumerable<Waypoint> alive)
     {
         var live = new HashSet<string>(

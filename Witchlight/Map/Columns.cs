@@ -7,13 +7,13 @@ using Vintagestory.API.Server;
 namespace Witchlight;
 
 /// <summary>
-/// Whether one chunk's surface could be read, and why not where it could not.
+/// Says whether one chunk's surface could be read, and why not where it could
+/// not.
 ///
-/// Three answers, because three different things are true of a column that
-/// cannot be read and each wants a different fix. Not loaded is a chunk the
-/// server holds nothing for, or holds a map chunk for and no blocks under it —
-/// both answered by asking the server for it again, see <see cref="Repair"/>.
-/// Not ready is a chunk in memory whose height map is not built yet, which is
+/// Each answer calls for a different fix. Unloaded means the server holds
+/// nothing for the chunk, or holds a map chunk with no blocks under it. Both are
+/// answered by asking the server for the chunk again. See <see cref="Repair"/>.
+/// Unready means a chunk in memory whose height map is not built yet, which is
 /// transient and answered by trying again next tick.
 /// </summary>
 public enum Readiness
@@ -27,16 +27,13 @@ public enum Readiness
 public static class ColumnPump
 {
     /// <summary>
-    /// One chunk's surface, read straight from the world, or null where it
+    /// Reads one chunk's surface straight from the world. Returns null where it
     /// cannot be read right now.
     ///
-    /// What <see cref="Gather"/> does for a batch about to be written to disk,
-    /// done for one column an asker wants an answer about immediately: the same
-    /// two questions — is a map chunk here, are its blocks here — asked with
-    /// nothing gathered around them and nothing written afterward. Used by a
-    /// terrain pull that wants this column's record and does not care whether
-    /// the map already has one stored, only whether the world can answer for it
-    /// right now.
+    /// This asks the same two questions as a batch read, whether a map chunk is
+    /// here and whether its blocks are here, and writes nothing afterwards. A
+    /// terrain pull uses it when it wants this column's record regardless of what
+    /// the map has stored.
     /// </summary>
     public static byte[]? ReadOne(
         ICoreServerAPI api, int chunkX, int chunkZ, System.Func<int, bool> shows, Microblocks chiselled)
@@ -49,20 +46,20 @@ public static class ColumnPump
     }
 
     /// <summary>
-    /// Where a chunk sits in the year, as the game reckons it, rounded to the
-    /// month. Position matters: the hemispheres are in opposite seasons.
+    /// Returns where a chunk sits in the year, as the game reckons it, rounded to
+    /// the month. Position matters, because the hemispheres are in opposite
+    /// seasons.
     ///
-    /// Rounded because this is what decides when the map is redrawn. The year is
-    /// stored as one byte, and taken at full precision that byte moves 255 times
-    /// a year — every one of which rewrites every region holding a column that
-    /// crossed the step, whether or not anybody has been near it. A month is the
-    /// coarsest step the eye would not notice and the one the game itself counts
-    /// in, and it takes that from 255 redraws a year to twelve.
+    /// The rounding decides how often the map is redrawn. The year is stored as
+    /// one byte, and at full precision that byte moves 255 times a year. Each
+    /// step rewrites every region holding a column that crossed it, whether or
+    /// not anybody has been near it. A month is the coarsest step the eye does not
+    /// notice and the one the game counts in, and it cuts 255 redraws a year to
+    /// twelve.
     ///
-    /// The byte still means what it always meant, which is why nothing stored
-    /// has to change: it is a position in the year from 0 to 255, and the map
-    /// service reads it as the coordinate to sample the season's colours at. Only
-    /// the number of distinct values it takes has changed.
+    /// The byte still means a position in the year from 0 to 255, which the map
+    /// service reads as the coordinate to sample the season's colours at. Only
+    /// the number of distinct values it takes is reduced.
     /// </summary>
     private static byte SeasonAt(ICoreServerAPI api, int chunkX, int chunkZ, int edge, BlockPos scratch)
     {
@@ -73,16 +70,15 @@ public static class ColumnPump
     }
 
     /// <summary>
-    /// The middle of the month a point in the year falls in, as the stored byte.
-    ///
-    /// The middle rather than either edge, so what is drawn is the month's own
-    /// colour rather than the colour of the moment it began — the same distance
-    /// from wrong at both ends of it.
+    /// Returns the middle of the month a point in the year falls in, as the
+    /// stored byte. The middle draws the month's own colour rather than the
+    /// colour of the moment it began, and sits the same distance from wrong at
+    /// both ends.
     /// </summary>
     private static byte InMonths(float season, int months)
     {
-        // A year is a circle and `GetSeasonRel` may hand back the point where it
-        // closes, which belongs to the last month rather than to a thirteenth.
+        // A year is a circle and `GetSeasonRel` may return the point where it
+        // closes. That point belongs to the last month, not to a thirteenth.
         var round = Math.Clamp(season, 0f, 0.999999f);
         var month = (int)(round * months);
         var middle = (month + 0.5) / months;
@@ -90,10 +86,9 @@ public static class ColumnPump
     }
 
     /// <summary>
-    /// How many months the world's calendar divides its year into.
-    ///
-    /// Asked rather than assumed: a world may be configured with a longer month,
-    /// and twelve written down here would quietly mean something else on one.
+    /// Returns how many months the world's calendar divides its year into. A
+    /// world may be configured with a longer month, so a hardcoded twelve would
+    /// mean something else there.
     /// </summary>
     private static int MonthsPerYear(IGameCalendar? calendar)
     {
@@ -106,16 +101,16 @@ public static class ColumnPump
         return Math.Clamp(months, 1, 255);
     }
 
-    /// <summary>What the game's own calendar divides a year into, when it cannot
-    /// be asked.</summary>
+    /// <summary>The months per year to assume when the calendar cannot be
+    /// read.</summary>
     private const int DefaultMonthsPerYear = 12;
 
     /// <summary>
-    /// Where the year has reached for each of these columns.
+    /// Returns where the year has reached for each of these columns.
     ///
     /// This is arithmetic over positions the caller already holds, with no world
-    /// lookup and no file read, which is what lets an idle server ask whether it
-    /// has anything to write without paying for an export to find out.
+    /// lookup and no file read, so an idle server can ask whether it has anything
+    /// to write without paying for an export.
     /// </summary>
     public static Dictionary<(int, int), byte> Seasons(
         ICoreServerAPI api,
@@ -132,16 +127,14 @@ public static class ColumnPump
     }
 
     /// <summary>
-    /// The columns whose season has moved.
+    /// Returns the columns whose season has moved.
     ///
-    /// Columns rather than the regions holding them, which is what they used to
-    /// be. A season lives in a region's directory now, so a year advancing costs
-    /// sixteen bytes for each chunk that crossed the step — where naming the
-    /// region meant repacking every chunk in it, including the great majority
-    /// whose season had not moved at all.
+    /// The result names columns rather than the regions holding them. A season
+    /// lives in a region's directory, so a year advancing costs sixteen bytes for
+    /// each chunk that crossed the step. Naming the region instead would repack
+    /// every chunk in it, including the majority whose season had not moved.
     ///
-    /// A step is a month, see <see cref="SeasonAt"/>, so this is a dozen redraws
-    /// a year rather than one every few minutes.
+    /// A step is a month. See <see cref="SeasonAt"/>.
     /// </summary>
     public static HashSet<(int, int)> SeasonsMoved(
         IReadOnlyDictionary<(int, int), byte> before,
@@ -159,12 +152,13 @@ public static class ColumnPump
     }
 
     /// <summary>
-    /// One chunk's surface, with the reason where there is none to read.
+    /// Reads one chunk's surface and reports the reason where there is none to
+    /// read.
     ///
-    /// The three questions an export used to ask across a batch — is a map chunk
-    /// here, is its height map built, are its blocks here — asked of one chunk,
-    /// so that the fast lane can read a few per tick and say exactly what it
-    /// found for each.
+    /// This asks three questions of one chunk: whether a map chunk is here,
+    /// whether its height map is built, and whether its blocks are here. Asking
+    /// per chunk lets the fast lane read a few per tick and report what it found
+    /// for each.
     /// </summary>
     public static Readiness TryRead(
         ICoreServerAPI api,
@@ -191,8 +185,8 @@ public static class ColumnPump
         if (!Readable(api, chunkX, chunkZ, edge, mapChunk))
         {
             // The heightmap is here and the blocks are not, which reads as a
-            // chunk of air rather than as an absence. Answered the same way as a
-            // chunk that is not there at all: by asking the server for it.
+            // chunk of air rather than an absence. Asking the server for the
+            // chunk answers both cases.
             return Readiness.Unloaded;
         }
 
@@ -202,12 +196,12 @@ public static class ColumnPump
     }
 
     /// <summary>
-    /// One column's entry — the six bytes the record holds for it — read straight
-    /// from the world, or nothing where its chunk cannot be read right now.
+    /// Reads one column's entry, the six bytes the record holds for it, straight
+    /// from the world. Returns null where its chunk cannot be read right now.
     ///
-    /// What a block placed or broken costs: one column walked, against the
-    /// thousand and twenty-four a whole chunk is. The chunk's record is patched
-    /// with the answer rather than read again.
+    /// This is what a block placed or broken costs: one column walked against the
+    /// 1024 a whole chunk holds. The caller patches the chunk's record with the
+    /// answer rather than reading the chunk again.
     /// </summary>
     public static byte[]? ReadColumn(
         ICoreServerAPI api, int x, int z, System.Func<int, bool> shows, Microblocks chiselled)
@@ -226,11 +220,11 @@ public static class ColumnPump
         return surface.Record();
     }
 
-    /// <summary>Where a column sits in its chunk's record, as a byte offset.</summary>
+    /// <summary>Returns where a column sits in its chunk's record, as a byte offset.</summary>
     public static int OffsetOf(int x, int z, int edge) =>
         (Mod(z, edge) * edge + Mod(x, edge)) * Regions.EntryBytes;
 
-    /// <summary>Which chunk a block is in. Floors, as negative coordinates need.</summary>
+    /// <summary>Returns the chunk a block is in. The division floors, as negative coordinates need.</summary>
     public static (int X, int Z) ChunkOf(int x, int z, int edge) => (FloorDiv(x, edge), FloorDiv(z, edge));
 
     private static int FloorDiv(int value, int by) => (int)Math.Floor((double)value / by);
@@ -238,35 +232,35 @@ public static class ColumnPump
     private static int Mod(int value, int by) => ((value % by) + by) % by;
 
     /// <summary>
-    /// Whether the blocks are there to be read, and not only the record of where
-    /// their surface is.
+    /// Reports whether the blocks are there to be read, and not only the record
+    /// of where their surface is.
     ///
-    /// A map chunk is the flat, two-dimensional record a column keeps — its
-    /// heightmaps, its climate — and the server holds those long after it has let
-    /// go of the blocks underneath them. So <see cref="IWorldManagerAPI.GetMapChunk"/>
-    /// answering is not the blocks being loaded, and the block accessor answers
-    /// zero for every position in a chunk whose blocks are gone.
+    /// A map chunk is the flat two-dimensional record a column keeps, holding its
+    /// heightmaps and its climate, and the server keeps that long after it lets
+    /// go of the blocks underneath. So
+    /// <see cref="IWorldManagerAPI.GetMapChunk"/> answering does not mean the
+    /// blocks are loaded, and the block accessor answers zero for every position
+    /// in a chunk whose blocks are gone.
     ///
-    /// Nothing about that reads as a failure further down. The scan finds nothing
-    /// that shows all the way to the bottom of the world, records air at the
-    /// height the map chunk claims, and the renderer paints a flat brown square —
-    /// one per chunk, chunk-aligned, in the middle of finished terrain, and
-    /// stored, so it stays until something marks that chunk dirty again.
+    /// Nothing further down reads that as a failure. The scan finds nothing that
+    /// shows all the way to the bottom of the world, records air at the height the
+    /// map chunk claims, and the renderer paints a flat brown chunk-aligned square
+    /// in the middle of finished terrain. The square is stored, so it stays until
+    /// something marks that chunk dirty again.
     ///
-    /// The vertical chunk holding the highest ground in this column is the one
-    /// that has to be there: it is where the scan starts and, on ordinary
-    /// terrain, where it stops.
+    /// The check is for the vertical chunk holding the highest ground in this
+    /// column, because that is where the scan starts and, on ordinary terrain,
+    /// where it stops.
     ///
-    /// **A rain height above the world is not a height.** The game leaves
-    /// `ushort.MaxValue` in that map wherever rain never stopped, and this took
-    /// the highest number it found — so one such position spoke for the whole
-    /// chunk. It asked for the vertical chunk two thousand layers up, was told
-    /// there is none, and set aside a column whose blocks were all in memory as
-    /// one whose blocks had gone. Nothing about a column ever changes what its
-    /// rain map says, so that column was unreadable for the life of the world: a
-    /// chunk-shaped hole in the middle of finished terrain that no export, no
-    /// walk back to it and no asking the server to load it could ever fill. It is
-    /// what three attempts at filling those holes were actually up against.
+    /// A rain height above the world is not a height. The game leaves
+    /// `ushort.MaxValue` in that map wherever rain never stopped. Taking the
+    /// highest number found let one such position speak for the whole chunk: the
+    /// check asked for the vertical chunk two thousand layers up, was told there
+    /// is none, and recorded a column whose blocks were all in memory as one whose
+    /// blocks had gone. Nothing about a column changes what its rain map says, so
+    /// that column stayed unreadable for the life of the world, and no export, no
+    /// walk back to it and no chunk load could fill the hole.
+    /// <see cref="Ceiling"/> excludes those heights.
     /// </summary>
     private static bool Readable(
         ICoreServerAPI api, int chunkX, int chunkZ, int edge, IMapChunk mapChunk)
@@ -275,17 +269,15 @@ public static class ColumnPump
     }
 
     /// <summary>
-    /// The highest real ground in one chunk, in blocks.
+    /// Returns the highest real ground in one chunk, in blocks.
     ///
-    /// Real, which is the whole of what this is for: what is read out of the rain
-    /// map is a height where rain stopped and `ushort.MaxValue` where it never
-    /// did, and only one of those is somewhere the world has a block. Anything at
-    /// or above the top of the world is the second kind and is not counted.
+    /// The rain map holds a height where rain stopped and `ushort.MaxValue` where
+    /// it never did. Only the first kind names somewhere the world has a block, so
+    /// anything at or above the top of the world is excluded.
     ///
-    /// Zero where a chunk holds nothing else, which is a column open to the sky
-    /// from top to bottom — the bottom of the world is as good a place as any to
-    /// start looking for ground in one, and it is a chunk the column certainly
-    /// has.
+    /// The result is zero where a chunk holds nothing else, which means a column
+    /// open to the sky from top to bottom. The bottom of the world is a fine
+    /// place to start looking for ground there, and that chunk certainly exists.
     /// </summary>
     private static int Ceiling(ICoreServerAPI api, IMapChunk mapChunk)
     {
@@ -302,14 +294,12 @@ public static class ColumnPump
     }
 
     /// <summary>
-    /// One chunk's surface, while it is being read and packed.
+    /// Holds one chunk's surface while it is read and packed.
     ///
-    /// Four parallel arrays were allocated by one method and threaded through two
-    /// others, which is four chances to hand one a length the others do not have
-    /// and no way for a reader to see that they are one thing. They are one
-    /// thing: what is on top of each column of one chunk, in the order the format
-    /// stores it. Reused across chunks, because an export walks hundreds of them
-    /// and the buffer is the same size every time.
+    /// The four parallel arrays are one thing: what is on top of each column of
+    /// one chunk, in the order the format stores it. A caller reuses one instance
+    /// across chunks, because an export walks hundreds of them and the buffer is
+    /// the same size every time.
     /// </summary>
     public sealed class Surface
     {
@@ -326,7 +316,7 @@ public static class ColumnPump
             _rainfall = new byte[area];
         }
 
-        /// <summary>What is on top of one column.</summary>
+        /// <summary>Records what is on top of one column.</summary>
         public void Set(int at, int block, int y, byte temperature, byte rainfall)
         {
             _blocks[at] = (ushort)block;
@@ -335,7 +325,7 @@ public static class ColumnPump
             _rainfall[at] = rainfall;
         }
 
-        /// <summary>Packs it into the record the format stores.</summary>
+        /// <summary>Packs the surface into the record the format stores.</summary>
         public byte[] Record()
         {
             var record = new byte[_blocks.Length * Regions.EntryBytes];
@@ -355,8 +345,8 @@ public static class ColumnPump
 
     /// <summary>
     /// Fills one chunk's columns. The rain height map already knows where the
-    /// surface is, so this is one block lookup and one climate lookup per column
-    /// rather than a search down from the sky.
+    /// surface is, so this costs one block lookup and one climate lookup per
+    /// column rather than a search down from the sky.
     /// </summary>
     private static void Read(
         ICoreServerAPI api,
@@ -381,11 +371,12 @@ public static class ColumnPump
 
     /// <summary>
     /// Reads what is on top of one column into one slot of a surface.
-    ///
-    /// `index` is the column's place in the chunk, which is where its rain height
-    /// is; `slot` is where the answer goes, which is the same number for a whole
-    /// chunk and zero for a surface of one.
     /// </summary>
+    /// <param name="index">The column's place in the chunk, which is where its
+    /// rain height is.</param>
+    /// <param name="slot">Where the answer goes. This matches
+    /// <paramref name="index"/> for a whole chunk and is zero for a surface of
+    /// one column.</param>
     private static void ReadAt(
         ICoreServerAPI api,
         IMapChunk mapChunk,
@@ -401,37 +392,33 @@ public static class ColumnPump
         var accessor = api.World.BlockAccessor;
         var ceiling = api.WorldManager.MapSizeY - 1;
 
-        // Held inside the world, for the reason `Ceiling` is: this is where the
-        // search downward starts, and a position whose rain never stopped says
-        // 65535. Started there, the search walks sixty thousand positions of
-        // nothing before it reaches the sky, and what it stores for a column it
-        // finds nothing in is that number squeezed into a signed short — which
-        // is a surface at -1.
+        // Clamped inside the world for the reason `Ceiling` clamps. The search
+        // downward starts here, and a position whose rain never stopped reads
+        // 65535. Starting there walks sixty thousand empty positions before
+        // reaching the sky, and a column it finds nothing in stores that number
+        // squeezed into a signed short, which is a surface at -1.
         var top = Math.Min((int)mapChunk.RainHeightMap[index], ceiling);
         var y = top;
         var id = 0;
 
         // The rain height map marks where rain stops, which is commonly the air
-        // just above the ground. Step down until something is actually there,
-        // rather than mapping the sky.
+        // just above the ground, so step down until something is there.
         //
-        // Something that *shows*, not merely something that is not air. A large
-        // structure stands one real block beside a run of invisible placeholders,
-        // and a barrel or a door has its own; a search that stopped at the first
-        // non-air block recorded one of those and the map drew a speck of nothing
-        // in the middle of grass. What counts as showing is the palette's to say —
-        // see `PaletteExchange.Shows`.
+        // The search stops at a block that shows, not at any block that is not
+        // air. A large structure stands one real block beside a run of invisible
+        // placeholders, and a barrel or a door has its own. Stopping at the first
+        // non-air block recorded one of those, and the map drew a speck of
+        // nothing in the middle of grass. The palette decides what shows. See
+        // `PaletteExchange.Shows`.
         //
-        // All the way down, rather than a few blocks. A dug shaft is a column of
-        // air below where the sky still says the ground is, and a search that
-        // gave up after eight of them recorded air — which the map paints as
-        // ground nobody has ever explored. So every pit a player dug deeper than
-        // eight blocks became a hole on the map that no amount of exporting would
-        // fill.
+        // The search runs all the way down rather than a few blocks. A dug shaft
+        // is a column of air below where the sky still says the ground is, and
+        // giving up after eight blocks recorded air, which the map paints as
+        // unexplored ground. Every pit deeper than eight blocks became a hole no
+        // export would fill.
         //
-        // The depth is paid by the columns that need it and by no others:
-        // ordinary ground answers on the first or second read, and only an open
-        // shaft costs its own depth.
+        // Only the columns that need the depth pay for it. Ordinary ground answers
+        // on the first or second read.
         for (; y >= 0; y--)
         {
             position.Set(worldX, y, worldZ);
@@ -441,15 +428,14 @@ public static class ColumnPump
                 continue;
             }
 
-            // What it is made of, where what it is does not say. A chiselled
-            // block is a shell with its material in the block entity beside it —
-            // see `Microblocks`. Everything else answers with itself.
+            // A chiselled block is a shell with its material in the block entity
+            // beside it. See `Microblocks`. Every other block answers with
+            // itself.
             //
-            // Asked before the palette is, not after. The shell's only texture is
-            // the game's missing-texture checker, so the palette rightly says it
-            // draws nothing; asking that first would walk past every ruin wall in
-            // the world and record the ground under it. What has to show is the
-            // material.
+            // The material is resolved before the palette is asked. The shell's
+            // only texture is the game's missing-texture checker, so the palette
+            // says it draws nothing. Asking the palette first would walk past
+            // every ruin wall in the world and record the ground under it.
             var drawn = chiselled.MaterialAt(accessor, position, here, shows);
             if (shows(drawn))
             {
@@ -460,17 +446,17 @@ public static class ColumnPump
 
         if (id == 0)
         {
-            // Nothing anywhere beneath the sky here, which is no ordinary column.
-            // Recorded where the sky said rather than below the world, so the
-            // height stays a number the map can draw with.
+            // Nothing shows anywhere beneath the sky here. Record the height the
+            // sky gave rather than a position below the world, so the height
+            // stays a number the map can draw with.
             y = top;
         }
 
         position.Set(worldX, y, worldZ);
 
-        // A column whose climate cannot be read is drawn at the middle of both
-        // scales rather than left at whatever the last chunk put there — the
-        // buffer is reused, so nothing here may be skipped.
+        // A column whose climate cannot be read takes the middle of both scales.
+        // The buffer is reused across chunks, so leaving a slot unwritten would
+        // keep the last chunk's value.
         var climate = accessor.GetClimateAt(position, EnumGetClimateMode.WorldGenValues);
         surface.Set(
             slot,

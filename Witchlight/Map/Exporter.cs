@@ -12,34 +12,32 @@ using Vintagestory.API.Server;
 namespace Witchlight;
 
 /// <summary>
-/// Sending the surface of the world to the map service.
+/// Sends the surface of the world to the map service.
 ///
-/// The whole of the export: what has moved since last time, what to re-read, and
-/// the sending of it. Kept apart from the mod system because none of it is about
-/// the game's lifecycle — it is about the map — and because this runs on the
-/// server's own tick and so has to be readable enough to be sure it is cheap.
+/// This holds the whole export: what has moved since last time, what to re-read,
+/// and the sending of it. It runs on the server's own tick, so it must stay
+/// readable enough to confirm it is cheap.
 ///
-/// Terrain used to go to disk, one region file per square, for the service to
-/// notice and read back. It goes over the service's API channel now and into
-/// the service's own database, which makes that the one place the map is kept.
-/// What this holds of the ground is a checksum per chunk — enough to tell a
-/// chunk loading again from one that changed — and, for chunks somebody is
-/// building in, the record itself, so that a block placed or broken costs one
-/// column read and a small post rather than a thousand reads.
+/// Terrain travels over the service's API channel and into the service's
+/// database, which is the one place the map is kept. This side holds a checksum
+/// per chunk, which is enough to tell a chunk loading again from one that
+/// changed. For chunks somebody is building in it also holds the record itself,
+/// so a block placed or broken costs one column read and a small post rather
+/// than a thousand reads.
 ///
-/// Two lanes, on two clocks:
+/// The work runs in two lanes on two clocks.
 ///
 /// The fast lane runs every quarter second. A block a player places or breaks
-/// patches one column of its chunk's record in memory and the chunk goes on the
-/// next post — nothing is re-read. Chunks the server marked dirty for any other
-/// reason are re-read whole, a bounded few per beat, so that the game thread
-/// pays a slice of each tick and never all of it.
+/// patches one column of its chunk's record in memory, and the chunk goes on the
+/// next post without a re-read. Chunks the server marked dirty for any other
+/// reason are re-read whole, a bounded few per beat, so the game thread pays a
+/// slice of each tick rather than all of it.
 ///
 /// The slow lane runs on `export_interval_ms`. It asks where the year has
 /// reached for every chunk the map holds and sends the season of any that
-/// crossed a month, and it re-reads whole every chunk the fast lane patched
-/// rather than read, which is the catch-all for anything a block event did not
-/// describe — water, growth, a fire, a tree felled.
+/// crossed a month. It also re-reads whole every chunk the fast lane patched
+/// rather than read, which catches anything no block event described, such as
+/// water, growth, a fire, or a tree felled.
 /// </summary>
 public sealed class Exporter
 {
@@ -47,51 +45,52 @@ public sealed class Exporter
     private readonly string _exports;
     private readonly MapService _service;
 
-    /// <summary>Chunks whose blocks moved and whose surface is to be read again.</summary>
+    /// <summary>Holds chunks whose blocks moved and whose surface is to be read again.</summary>
     private readonly DirtyColumns _dirty = new();
 
     /// <summary>
-    /// Chunks whose blocks moved since the slow lane last looked, whether or not
-    /// the fast lane has answered for them since. The catch-all's list.
+    /// Holds chunks whose blocks moved since the slow lane last looked, whether
+    /// or not the fast lane has answered for them since. The slow lane's
+    /// catch-all reads these whole.
     /// </summary>
     private readonly DirtyColumns _touched = new();
 
     /// <summary>
-    /// The columns the map is owed, and the getting of them back. See
+    /// Tracks the columns the map is owed and gets them back. See
     /// <see cref="Repair"/>.
     /// </summary>
     private readonly Repair _repair;
 
     /// <summary>
-    /// What the service holds for each chunk: the checksum of the record it has
-    /// and the season it was sent with. Seeded from the service at start and
-    /// moved with every post, so a chunk loading again is known from one that
-    /// changed without a copy of the ground on this side.
+    /// Holds what the service has for each chunk: the checksum of its record and
+    /// the season it was sent with. This is seeded from the service at start and
+    /// updated with every post, so a chunk loading again is told from one that
+    /// changed without keeping a copy of the ground on this side.
     /// </summary>
     private readonly Dictionary<(int, int), Known> _known = new();
 
     /// <summary>
-    /// The records of the chunks most recently read, so that a block event can
-    /// patch one column rather than re-read a thousand. Bounded, because a
-    /// record is six kilobytes and a long-running server loads every chunk in
-    /// the world sooner or later.
+    /// Holds the records of the chunks most recently read, so a block event can
+    /// patch one column rather than re-read a thousand. The count is bounded
+    /// because a record is six kilobytes and a long-running server loads every
+    /// chunk in the world sooner or later.
     /// </summary>
     private readonly Recent _recent = new(RecentChunks);
 
-    /// <summary>Chunks whose held record was patched by a block event and is ready to send.</summary>
+    /// <summary>Holds chunks whose record a block event patched, ready to send.</summary>
     private readonly HashSet<(int, int)> _patched = new();
 
-    /// <summary>Chunks whose season the slow lane found had turned, waiting for the next post.</summary>
+    /// <summary>Holds chunks whose season the slow lane found had turned, waiting for the next post.</summary>
     private readonly Dictionary<(int, int), byte> _turned = new();
 
-    /// <summary>The buffer one chunk is read into. Reused: every chunk is the same size.</summary>
+    /// <summary>The buffer one chunk is read into. It is reused, because every chunk is the same size.</summary>
     private readonly ColumnPump.Surface _surface;
 
-    /// <summary>Whether what the service holds has been asked for and answered.</summary>
+    /// <summary>Tracks whether the service has answered what it holds.</summary>
     private bool _synced;
     private bool _syncing;
 
-    /// <summary>Whether spawn has reached the map service yet.</summary>
+    /// <summary>Tracks whether spawn has reached the map service.</summary>
     private bool _wroteWorldFacts;
 
     private readonly System.Func<int, bool> _shows;
@@ -109,31 +108,30 @@ public sealed class Exporter
         var edge = api.WorldManager.ChunkSize;
         _surface = new ColumnPump.Surface(edge * edge);
 
-        // What a recovered column is for: it was asked for so that it could be
-        // sent, and sending is this class's. Marked as well, because a column the
-        // server already held raises no ChunkDirty when it is asked for again —
-        // the callback is the only thing that says it is there.
+        // A recovered column was asked for so it could be sent. It is marked
+        // here because a column the server already held raises no ChunkDirty
+        // when asked for again, so the callback is the only signal it arrived.
         _repair = new Repair(api, columns => _dirty.MarkAll(columns));
 
-        // What the server loaded before this existed to hear about it, which is
-        // the square of chunks around spawn. Those are held for the life of the
-        // server, so their one chance to be noticed has already gone by.
+        // The server loaded the square of chunks around spawn before this class
+        // existed to hear about it. Those are held for the life of the server,
+        // so their one ChunkDirty has already passed.
         _dirty.MarkUnexported(LoadedColumns(api));
     }
 
-    /// <summary>How many chunks the fast lane may re-read whole in one beat.</summary>
+    /// <summary>Sets how many chunks the fast lane may re-read whole in one beat.</summary>
     private const int ReadsPerBeat = 8;
 
-    /// <summary>How many chunks' records are held for patching. Twelve megabytes at most.</summary>
+    /// <summary>Sets how many chunks' records are held for patching. This costs twelve megabytes at most.</summary>
     private const int RecentChunks = 2048;
 
-    /// <summary>How many columns are waiting to be re-read.</summary>
+    /// <summary>Returns how many columns are waiting to be re-read.</summary>
     public int Waiting => _dirty.Count;
 
-    /// <summary>How many columns the map wants and cannot read yet.</summary>
+    /// <summary>Returns how many columns the map wants and cannot read yet.</summary>
     public int Withheld => _repair.Owed;
 
-    /// <summary>How many chunks the map holds, as far as this side knows.</summary>
+    /// <summary>Returns how many chunks the map holds, as far as this side knows.</summary>
     public int Mapped => _known.Count;
 
     /// <summary>Notes a chunk the server has marked dirty.</summary>
@@ -145,11 +143,11 @@ public sealed class Exporter
 
     /// <summary>
     /// Notes a block a player placed or broke. Where the chunk's record is held,
-    /// one column is read again and the record patched; otherwise the chunk is
-    /// marked for a whole read like any other change.
+    /// this reads one column again and patches the record. Otherwise it marks the
+    /// chunk for a whole read like any other change.
     ///
-    /// Main thread only: the game raises these there, and so is everything this
-    /// touches.
+    /// Call this on the main thread only. The game raises these events there and
+    /// everything this touches lives there.
     /// </summary>
     public void Touched(BlockPos at)
     {
@@ -172,8 +170,8 @@ public sealed class Exporter
         var offset = ColumnPump.OffsetOf(at.X, at.Z, edge);
         if (record.AsSpan(offset, Regions.EntryBytes).SequenceEqual(entry))
         {
-            // Underground, almost always: the surface did not move, and there is
-            // nothing to send. This is what keeps mining off the wire.
+            // The surface did not move, which is almost always the case
+            // underground. Comparing here keeps mining off the wire.
             return;
         }
 
@@ -182,14 +180,13 @@ public sealed class Exporter
     }
 
     /// <summary>
-    /// Makes sure where the world counts from has reached the map service, and
-    /// keeps trying until it has.
+    /// Makes sure the position the world counts from has reached the map service,
+    /// and keeps trying until it has.
     ///
-    /// Attempted when the world is ready and again on every export, because "the
-    /// world is ready" is a phase and having a spawn point is a fact, and the two
-    /// are not guaranteed to arrive in that order. Cheap to repeat: once it is
-    /// written this does nothing, and until it is the map is counting from
-    /// somewhere the players are not.
+    /// This runs when the world is ready and again on every export. The world
+    /// being ready and the world having a spawn point are not guaranteed to
+    /// arrive in that order. Repeating costs nothing once the facts are written,
+    /// and until they are the map counts from somewhere the players do not.
     /// </summary>
     public void KeepWorldFacts()
     {
@@ -197,13 +194,13 @@ public sealed class Exporter
     }
 
     /// <summary>
-    /// The fast lane: one beat, on the game thread.
+    /// Runs one beat of the fast lane, on the game thread.
     ///
-    /// Everything that has to reach the service now — patched chunks, a few
-    /// re-read chunks, seasons that turned — in one post. Nothing is taken from
-    /// the pile while a post is still on its way: the service takes one post of
-    /// this kind at a time, and a beat that arrives while one is in flight
-    /// leaves everything where it is for the next.
+    /// One post carries everything that has to reach the service now: patched
+    /// chunks, a few re-read chunks, and seasons that turned. Nothing leaves the
+    /// pile while a post is in flight, because the service takes one post of this
+    /// kind at a time. A beat arriving during a post leaves everything for the
+    /// next beat.
     /// </summary>
     public void Push()
     {
@@ -221,7 +218,7 @@ public sealed class Exporter
         var entries = new List<Entry>();
         var sent = new List<(int, int)>();
 
-        // Patched first: these cost nothing to read and are exactly what a
+        // Patched chunks go first. They cost nothing to read and cover what a
         // player is standing over.
         foreach (var chunk in _patched)
         {
@@ -234,7 +231,7 @@ public sealed class Exporter
         _dirty.Drop(_patched);
         _patched.Clear();
 
-        // Then a bounded few re-read whole.
+        // Then re-read a bounded few whole.
         var wanted = _dirty.TakeUpTo(ReadsPerBeat);
         var unloaded = new List<(int, int)>();
         foreach (var chunk in wanted)
@@ -242,7 +239,7 @@ public sealed class Exporter
             switch (ColumnPump.TryRead(_api, chunk.Item1, chunk.Item2, _shows, _chiselled, _surface, out var record))
             {
                 case Readiness.Unready:
-                    // Loaded but not finished. It will be, so it waits.
+                    // Loaded but not finished building. It waits for a later beat.
                     _dirty.Restore(new[] { chunk });
                     continue;
                 case Readiness.Unloaded:
@@ -255,9 +252,9 @@ public sealed class Exporter
 
             if (_known.TryGetValue(chunk, out var known) && known.Crc == Crc32.Of(record!))
             {
-                // Any block moving marks a chunk dirty and most of those are
-                // underground, where the surface does not move. Comparing here
-                // is what keeps mining off the wire.
+                // Any block moving marks a chunk dirty, and most of those moves
+                // are underground where the surface does not change. Comparing
+                // here keeps mining off the wire.
                 Settled(new[] { chunk });
                 continue;
             }
@@ -266,8 +263,8 @@ public sealed class Exporter
             sent.Add(chunk);
         }
 
-        // A chunk that cannot be read at all is forgotten here and put on the
-        // list of what the server has to be asked for.
+        // A chunk that cannot be read is forgotten here and added to what the
+        // server must be asked for.
         _dirty.Forget(unloaded);
         _repair.Owe(unloaded);
 
@@ -283,9 +280,9 @@ public sealed class Exporter
             return;
         }
 
-        // Recorded as sent now rather than when the post lands: the next beat
-        // reads this to know whether a chunk has changed, and a post that fails
-        // puts everything back — see `Restore` below.
+        // These are recorded as sent now rather than when the post lands,
+        // because the next beat reads this to tell whether a chunk changed. The
+        // failure callback below puts everything back.
         foreach (var entry in entries)
         {
             if (entry.Record is not null)
@@ -301,9 +298,9 @@ public sealed class Exporter
 
         _service.Terrain(Json(edge, entries), failed: () =>
         {
-            // Back on the game thread, because everything here lives there. The
-            // ground goes back on the pile to be read and sent again; the
-            // seasons go back to be sent again.
+            // Hop back to the game thread, because everything here lives there.
+            // The ground returns to the pile to be read and sent again, and the
+            // seasons return to be sent again.
             _api.Event.EnqueueMainThreadTask(() =>
             {
                 foreach (var chunk in sent)
@@ -320,11 +317,11 @@ public sealed class Exporter
     }
 
     /// <summary>
-    /// The slow lane: one beat, on the game thread.
+    /// Runs one beat of the slow lane, on the game thread.
     ///
-    /// Where the year has reached for every chunk the map holds, and a whole
-    /// re-read of every chunk the fast lane answered for by patching rather than
-    /// reading. Returns what happened, for the command that asks.
+    /// This checks where the year has reached for every chunk the map holds, and
+    /// queues a whole re-read of every chunk the fast lane answered by patching.
+    /// It returns a line describing what happened, for the command that asks.
     /// </summary>
     public string Export(string reason, bool force = false)
     {
@@ -332,15 +329,15 @@ public sealed class Exporter
 
         if (force)
         {
-            // What an operator typing the command expects: read everything in
-            // memory again, whether or not the server thinks it moved.
+            // An operator typing the command expects everything in memory to be
+            // read again, whether or not the server thinks it moved.
             _dirty.MarkAll(LoadedColumns(_api));
             _repair.Ask(Repair.PerCommand);
         }
 
-        // Everything the server marked dirty since last time that the fast lane
-        // did not read whole: read whole now, in case the change was one no
-        // block event described.
+        // Read whole everything the server marked dirty since last time that the
+        // fast lane did not read whole, in case no block event described the
+        // change.
         var catchAll = _touched.Take();
         _dirty.Restore(catchAll);
 
@@ -367,20 +364,20 @@ public sealed class Exporter
     }
 
     /// <summary>
-    /// Asks the server for a few of the columns the map wants back. On a clock of
-    /// its own — see <see cref="Repair"/>.
+    /// Asks the server for a few of the columns the map wants back. This runs on
+    /// a clock of its own. See <see cref="Repair"/>.
     /// </summary>
     public void Fetch() => _repair.Ask(Repair.PerStep);
 
     /// <summary>
-    /// Asks the service what it already holds, once, and takes that as what has
+    /// Asks the service once what it already holds, and takes that as what has
     /// been sent.
     ///
-    /// Until the answer lands everything is treated as never sent, which costs a
-    /// read and a post per chunk loaded in the meantime and nothing else: the
-    /// service already holds those and stores nothing for a record it already
-    /// has. What arrives is merged under what this side has since learned, since
-    /// a chunk sent a moment ago is newer than the service's answer about it.
+    /// Until the answer lands everything counts as never sent. That costs one
+    /// read and one post per chunk loaded in the meantime and nothing more,
+    /// because the service stores nothing for a record it already has. The answer
+    /// merges under what this side has learned since, because a chunk sent a
+    /// moment ago is newer than the service's answer about it.
     /// </summary>
     private void Sync()
     {
@@ -428,9 +425,9 @@ public sealed class Exporter
     }
 
     /// <summary>
-    /// Records that these columns have reached the service. Reaching it is what
-    /// stops a column being re-read for merely loading again, and what settles a
-    /// column the map was owed — two facts with one cause.
+    /// Records that these columns have reached the service. Reaching the service
+    /// stops a column being re-read for merely loading again, and settles a
+    /// column the map was owed.
     /// </summary>
     private void Settled(IReadOnlyCollection<(int, int)> columns)
     {
@@ -439,20 +436,20 @@ public sealed class Exporter
         _repair.Settled(columns);
     }
 
-    /// <summary>The season a chunk is sent with: the one the year says, freshly.</summary>
+    /// <summary>Returns the season to send a chunk with, read fresh from the calendar.</summary>
     private byte SeasonOf((int, int) chunk, int edge) =>
         ColumnPump.Seasons(_api, new[] { chunk }, edge)[chunk];
 
-    /// <summary>What the status command says about the terrain.</summary>
+    /// <summary>Returns the line the status command prints about the terrain.</summary>
     public string Describe() =>
         $"terrain: {_known.Count} chunks on the map, {_recent.Count} held for quick reads, "
         + $"{_chiselled.Kinds} chiselled block(s) resolved to their material"
         + (_synced ? "" : ", not yet told what the map holds");
 
-    /// <summary>What an export says about the columns still to come, or nothing.</summary>
+    /// <summary>Returns the clause an export prints about columns still owed, or an empty string.</summary>
     private string Owing() => _repair.Owed > 0 ? $", {_repair.Owed} columns still owed" : "";
 
-    /// <summary>Every chunk column the server currently holds in memory.</summary>
+    /// <summary>Returns every chunk column the server currently holds in memory.</summary>
     private static IEnumerable<(int, int)> LoadedColumns(ICoreServerAPI api)
     {
         foreach (var index in new List<long>(api.WorldManager.AllLoadedMapchunks.Keys))
@@ -462,7 +459,7 @@ public sealed class Exporter
         }
     }
 
-    /// <summary>One chunk on the wire: ground that moved, or a season that turned.</summary>
+    /// <summary>Carries one chunk on the wire, as ground that moved or a season that turned.</summary>
     private sealed record Entry((int, int) Chunk, byte[]? Record, byte SeasonByte)
     {
         public static Entry Of((int, int) chunk, byte[] record, byte season) =>
@@ -472,9 +469,8 @@ public sealed class Exporter
     }
 
     /// <summary>
-    /// The post the service reads: the chunk edge, then one entry per chunk. A
-    /// record travels deflated and as base64, the same bytes a region file used
-    /// to hold for the chunk.
+    /// Builds the post the service reads: the chunk edge, then one entry per
+    /// chunk. A record travels deflated and base64 encoded.
     /// </summary>
     private static string Json(int edge, IReadOnlyList<Entry> entries)
     {
@@ -499,7 +495,7 @@ public sealed class Exporter
         return JsonConvert.SerializeObject(new { Edge = edge, Chunks = chunks });
     }
 
-    /// <summary>A record deflated, raw, the way the service inflates one.</summary>
+    /// <summary>Deflates a record raw, the way the service inflates one.</summary>
     private static byte[] Packed(byte[] record)
     {
         using var packed = new MemoryStream();
@@ -511,9 +507,8 @@ public sealed class Exporter
     }
 
     /// <summary>
-    /// The records most recently read, most recently used last out. A dictionary
-    /// and a list rather than a library: it is thirty lines, and the one
-    /// operation that matters — is this chunk's record here — is the dictionary's.
+    /// Holds the records most recently read and evicts the least recently used
+    /// first.
     /// </summary>
     private sealed class Recent
     {

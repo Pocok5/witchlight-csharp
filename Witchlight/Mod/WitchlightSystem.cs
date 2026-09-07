@@ -13,11 +13,11 @@ namespace Witchlight;
 /// The server half of Witchlight: what runs, and when.
 ///
 /// Nothing here decides anything. Every piece of judgement lives in a type of its
-/// own — <see cref="Exporter"/> for the map, <see cref="PaletteExchange"/> and
-/// <see cref="IconExchange"/> and <see cref="PortraitExchange"/> for what has to
-/// come from a client, <see cref="MapService"/> for what goes to the service —
-/// and what is left is the wiring: which of them the game's events reach, on what
-/// clock, and in what order. The commands are in `ServerCommands.cs`, which is
+/// own. <see cref="Exporter"/> holds the map, <see cref="PaletteExchange"/> and
+/// <see cref="IconExchange"/> and <see cref="PortraitExchange"/> hold what has to
+/// come from a client, and <see cref="MapService"/> holds what goes to the
+/// service. What is left here is the wiring: which of them the game's events
+/// reach, on what clock, and in what order. The commands are in `ServerCommands.cs`, which is
 /// the same class: a command surface is a view of the whole system and splitting
 /// it into a type of its own would only mean handing that type every field.
 ///
@@ -41,16 +41,16 @@ public partial class WitchlightSystem : ModSystem
 
     /// <summary>
     /// Which markers each player keeps in sight on their own map. Read once the
-    /// world is up, because it lives in the savegame, and written back with it —
-    /// the same life <see cref="_visibility"/> has, for the same reason.
+    /// world is up, because it lives in the savegame, and written back with it.
+    /// That is the same life <see cref="_visibility"/> has, for the same reason.
     /// </summary>
     private Pins _pins = Pins.Empty;
 
     /// <summary>
     /// What block each marker was put on. Read once the world is up and written
-    /// back with it, the same life the two stores above have — and for the same
-    /// reason: it is a fact about a waypoint, and a store that outlived the
-    /// waypoints would describe markers that are gone.
+    /// back with it, the same life the two stores above have. It is a fact about
+    /// a waypoint, and a store that outlived the waypoints would describe markers
+    /// that are gone.
     /// </summary>
     private Origins _origins = Origins.Empty;
 
@@ -74,8 +74,8 @@ public partial class WitchlightSystem : ModSystem
     ///
     /// Null until the world is up, because which directory the map lives in
     /// depends on which world loaded. A plugin should not have to know that, and
-    /// should not have to guess when it stops being null — <see cref="Ready"/>
-    /// is what says so.
+    /// should not have to guess when it stops being null. <see cref="Ready"/> is
+    /// what says so.
     /// </summary>
     public WitchlightPlugins? Plugins => _plugins;
 
@@ -97,9 +97,9 @@ public partial class WitchlightSystem : ModSystem
     /// offer anything until the world is up, since which world loaded is what
     /// decides where the map is kept. A plugin that registered from its own
     /// <c>StartServerSide</c> found a Witchlight that was loaded and not yet
-    /// open, and the only sign was a line in the log — so which moment is the
-    /// right one is Witchlight's answer to give, not a thing for every plugin to
-    /// work out and get wrong separately.
+    /// open, and the only sign is a line in the log. Which moment is the right
+    /// one is Witchlight's answer to give, not a thing for every plugin to work
+    /// out and get wrong separately.
     ///
     /// <code>
     /// api.ModLoader.GetModSystem&lt;WitchlightSystem&gt;()?.Ready(async plugins =&gt;
@@ -167,7 +167,7 @@ public partial class WitchlightSystem : ModSystem
 
         // Version first, and on every start: the quickest way to tell a deployed
         // mod from the one you meant to deploy. The map service prints its own for
-        // the same reason, and the two are always the same number — they ship as
+        // the same reason, and the two are always the same number. They ship as
         // one archive, so two different numbers in one log is a mis-deployment.
         api.Logger.Notification(
             "[witchlight] {0} ready, exporting every {1}s",
@@ -180,9 +180,9 @@ public partial class WitchlightSystem : ModSystem
     ///
     /// The map may be filed per world, and which directory that is cannot be
     /// worked out until the world is up and can be asked its name. So nothing
-    /// that writes into the export directory is built or run before this — the
-    /// palette is built while the assets are still in memory, because that is
-    /// the only window there is for it, and written here with everything else.
+    /// that writes into the export directory is built or run before this. The
+    /// palette is built while the assets are still in memory, which is the only
+    /// window there is for it, and written here with everything else.
     /// </summary>
     private void OpenTheMap(ICoreServerAPI api)
     {
@@ -265,10 +265,10 @@ public partial class WitchlightSystem : ModSystem
         // tell those cases apart rather than guessing which kind of join this is.
         //
         // It cannot be the only teller. A dedicated server has been seen not to
-        // raise this event at all, with the address readable and nothing thrown —
-        // and when it was the one that spoke, that server said nothing until a
-        // twenty second timer gave up on it. Whichever way it behaves, the line
-        // above has already been said.
+        // raise this event at all, with the address readable and nothing thrown.
+        // When it was the one that spoke, that server said nothing until a twenty
+        // second timer gave up on it. Whichever way it behaves, the line above has
+        // already been said.
         api.Event.PlayerReady += player =>
             Doing("telling a player where the map is", () => Greet(player, 0));
 
@@ -294,7 +294,7 @@ public partial class WitchlightSystem : ModSystem
             Doing("noting a changed chunk", () => _exporter?.Mark(coord.X, coord.Z, reason));
 
         // A block a player placed or broke says exactly which column moved, so
-        // the exporter reads that one column rather than the chunk — see
+        // the exporter reads that one column rather than the chunk. See
         // `Exporter.Touched`. Everything the game changes without a player is
         // still caught by the chunk signal above.
         api.Event.DidPlaceBlock += (player, oldBlockId, selection, stack) =>
@@ -303,17 +303,14 @@ public partial class WitchlightSystem : ModSystem
             Doing("noting a broken block", () => _exporter?.Touched(selection.Position));
 
         api.Event.GameWorldSave += () => Doing("exporting on save", () => Export("world save"));
-        api.Event.GameWorldSave += () => Doing("storing marker visibility", StoreVisibility);
-        api.Event.GameWorldSave += () => Doing("storing marker pins", StorePins);
-        api.Event.GameWorldSave += () =>
-            Doing("storing the blocks markers were made on", StoreOrigins);
+        api.Event.GameWorldSave += () => Doing("storing marker facts", StoreMarkerFacts);
 
         // Everything that needs a world rather than a mod: where the world counts
         // from, who may see which marker, and the service that serves them.
         //
-        // Spawn is not known while mods are still starting, and asking for it then
-        // threw — which left the map counting from absolute zero, with nothing on
-        // either side looking wrong.
+        // Spawn is not known while mods are still starting, and asking for it
+        // then throws. That leaves the map counting from absolute zero, with
+        // nothing on either side looking wrong.
         api.Event.ServerRunPhase(EnumServerRunPhase.RunGame, () => Doing("starting up", () =>
         {
             // Unpacked and asked for its settings first: they are what decides
@@ -359,8 +356,8 @@ public partial class WitchlightSystem : ModSystem
         // change a few times a week, they are the bulk of what there is to send
         // beside the markers, and a post that says nothing new is dropped before
         // it goes anyway. Who may see them travels with them, and that can change
-        // between posts — a role granted, a player added — which is the other half
-        // of why this repeats rather than being sent once at start.
+        // between posts, when a role is granted or a player added, which is the
+        // other half of why this repeats rather than being sent once at start.
         api.Event.RegisterGameTickListener(
             Every("sharing claims", () => _service?.Claims(ClaimFeed.Json(api))),
             ShareIntervalMs);
@@ -374,8 +371,8 @@ public partial class WitchlightSystem : ModSystem
 
         // The fast lane: what moved, to the service, within a quarter of a
         // second. Fast enough that a player building sees the map follow their
-        // hands, and bounded on the game thread by how much it reads per beat —
-        // see `Exporter.Push`.
+        // hands, and bounded on the game thread by how much it reads per beat.
+        // See `Exporter.Push`.
         api.Event.RegisterGameTickListener(
             Every("pushing changed chunks", () => _exporter?.Push()), PushIntervalMs);
 
@@ -389,8 +386,8 @@ public partial class WitchlightSystem : ModSystem
             Repair.StepIntervalMs);
 
         // A colour the map has not got is not something a player fixes by
-        // rejoining, and on a small server nobody may rejoin for days — so the
-        // ask cannot only ride the join. On the export beat because that is the
+        // rejoining, and on a small server nobody may rejoin for days, so the ask
+        // cannot only ride the join. On the export beat because that is the
         // slowest clock here; what keeps it to one ask every couple of minutes,
         // and to one ask per player per palette, is in `AskAround`.
         api.Event.RegisterGameTickListener(
@@ -398,15 +395,15 @@ public partial class WitchlightSystem : ModSystem
                 _palettes?.AskAround(api.World.AllOnlinePlayers.OfType<IServerPlayer>())),
             Settings.ExportIntervalMs);
 
-        // Players move, so this goes far more often than the terrain — and it
-        // goes over the socket rather than to a file, because a position is worth
+        // Players move, so this goes far more often than the terrain. It goes
+        // over the socket rather than to a file, because a position is worth
         // nothing by the time a disk has finished with it.
         api.Event.RegisterGameTickListener(Every("posting players", () =>
             _service?.Players(PlayerFeed.Json(api, Settings.Exports))), LiveIntervalMs);
 
         // What plugins have collected since the last beat. On a clock rather
         // than as each row is made, because a collector scanning ore makes rows
-        // far faster than a round trip retires them — see `WitchlightPlugins`.
+        // far faster than a round trip retires them. See `WitchlightPlugins`.
         api.Event.RegisterGameTickListener(Every("sending plugin rows", () =>
             _plugins?.Drain()), LiveIntervalMs);
 
@@ -436,7 +433,7 @@ public partial class WitchlightSystem : ModSystem
     /// seed has nowhere to write until the exporter exists, and a timer that beat
     /// it there did nothing at all and said nothing about it.
     ///
-    /// The stepping is a tick because the asking has to be spread out — see
+    /// The stepping is a tick because the asking has to be spread out. See
     /// <see cref="Seeding"/> for what happens to a server handed the whole square
     /// at once.
     /// </summary>
@@ -530,8 +527,8 @@ public partial class WitchlightSystem : ModSystem
     }
 
     /// <summary>
-    /// Collects what somebody asked for on the web — markers, and land claims —
-    /// and does it.
+    /// Collects what somebody asked for on the web, markers and land claims, and
+    /// does it.
     ///
     /// The asking is a round trip and the doing touches the waypoint list and the
     /// claim list, so the two happen in different places: the request goes off the
@@ -572,9 +569,9 @@ public partial class WitchlightSystem : ModSystem
                         landed.Claims.Made, landed.Claims.Changed, landed.Claims.Removed);
 
                     // Only what actually changed. A claim the game has taken tells
-                    // every client itself — see `ILandClaimAPI.Add` — so pushing
-                    // the markers to everybody because a claim landed would be a
-                    // few tens of kilobytes per player to say nothing.
+                    // every client itself. See `ILandClaimAPI.Add`. Pushing the
+                    // markers to everybody because a claim landed would be a few
+                    // tens of kilobytes per player to say nothing.
                     if (landed.AnyMarkers)
                     {
                         SharedServer.SendToAll(api, _visibility, _pins);
@@ -684,51 +681,26 @@ public partial class WitchlightSystem : ModSystem
     }
 
     /// <summary>
-    /// Stores who may see which marker, beside the waypoints themselves.
+    /// Stores what the mod knows about each marker beside the waypoints
+    /// themselves: who may see it, who keeps it in sight, and the block it was
+    /// made on.
     ///
-    /// Given the live list so that decisions about markers somebody has since
-    /// deleted go with them, and so the store cannot outlive what it describes.
+    /// Given the live waypoint list so that facts about markers somebody has
+    /// since deleted go with them, and so no store outlives what it describes.
+    /// Nothing is written where the layer cannot be reached. An empty list there
+    /// would read as "every marker has been deleted" and take every fact with it.
     /// </summary>
-    private void StoreVisibility()
+    private void StoreMarkerFacts()
     {
         if (_sapi is null)
         {
             return;
         }
 
-        // The live list where there is one, and nothing where the layer cannot be
-        // reached — an empty list there would read as "every marker has been
-        // deleted" and take every decision with it.
-        _visibility.Write(_sapi, Markers.Layer(_sapi)?.Waypoints);
-    }
-
-    /// <summary>
-    /// Stores which markers each player keeps in sight, beside the waypoints
-    /// themselves and under the rule <see cref="StoreVisibility"/> follows: the
-    /// live list where there is one, and nothing where the layer cannot be
-    /// reached, so a save taken while it is down forgets nobody.
-    /// </summary>
-    private void StorePins()
-    {
-        if (_sapi is null)
-        {
-            return;
-        }
-
-        _pins.Write(_sapi, Markers.Layer(_sapi)?.Waypoints);
-    }
-
-    /// <summary>Stores what block each marker was put on, under the rule the two
-    ///  stores above follow: the live list where there is one, and nothing where
-    ///  the layer cannot be reached.</summary>
-    private void StoreOrigins()
-    {
-        if (_sapi is null)
-        {
-            return;
-        }
-
-        _origins.Write(_sapi, Markers.Layer(_sapi)?.Waypoints);
+        var waypoints = Markers.Layer(_sapi)?.Waypoints;
+        _visibility.Write(_sapi, waypoints);
+        _pins.Write(_sapi, waypoints);
+        _origins.Write(_sapi, waypoints);
     }
 
     public override void Dispose()

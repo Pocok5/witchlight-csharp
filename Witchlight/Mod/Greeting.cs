@@ -15,8 +15,8 @@ namespace Witchlight;
 /// of its own would only mean handing it every field this one already has.
 ///
 /// A map nobody knows the address of is a map nobody looks at, and this is the
-/// half that can say so in chat. What is kept apart from it is the wiring —
-/// which events call this is decided where every other event is.
+/// half that can say so in chat. The wiring is kept apart from it. Which events
+/// call this is decided where every other event is.
 /// </summary>
 public partial class WitchlightSystem
 {
@@ -24,7 +24,7 @@ public partial class WitchlightSystem
     /// When each player was told where the map is, on the machine's own clock.
     ///
     /// Kept as a time rather than as a yes, because whether to say it a second
-    /// time depends on how long ago the first one was — see <see cref="Greet"/>.
+    /// time depends on how long ago the first one was. See <see cref="Greet"/>.
     /// Cleared when they leave, so a rejoin is greeted again.
     /// </summary>
     private readonly Dictionary<string, long> _greeted = new();
@@ -77,10 +77,10 @@ public partial class WitchlightSystem
         // Gone is gone. Not *playing* is not gone, and the difference cost this
         // its whole job once already: `EnumClientState.Playing` is set by a packet
         // the client sends after it has finished loading and, on a first join,
-        // after the character screen closes — the same signal `PlayerReady` waits
-        // on. A player at `PlayerNowPlaying` is `Connected`, which is a player in
-        // the world who can be sent a line of chat, and refusing to greet anybody
-        // who was not yet `Playing` meant refusing to greet anybody at all.
+        // after the character screen closes. That is the same signal
+        // `PlayerReady` waits on. A player at `PlayerNowPlaying` is `Connected`,
+        // which is a player in the world who can be sent a line of chat. Refusing
+        // to greet anybody not yet `Playing` refuses to greet anybody at all.
         if (_sapi is not { } api || player.ConnectionState == EnumClientState.Offline)
         {
             return;
@@ -112,8 +112,8 @@ public partial class WitchlightSystem
         {
             // Nothing to say yet rather than nothing to say. The service publishes
             // its address a moment after the world comes up, so a player who
-            // joined into that gap is owed another look — and until one is made,
-            // this join has not been greeted at all.
+            // joined into that gap is owed another look. Until one is made, this
+            // join has not been greeted at all.
             lock (_greeted)
             {
                 _greeted.Remove(player.PlayerUID);
@@ -164,7 +164,7 @@ public partial class WitchlightSystem
         var address = $"The server map url: {AsLink(where, where)}. ";
 
         // Signing them in is the same thing `/witchlight login` does, so it is
-        // offered to exactly whoever could have typed that — and only where there
+        // offered to exactly whoever could have typed that, and only where there
         // is a service to mint one.
         if (_service is null || !player.HasPrivilege(Privilege.chat))
         {
@@ -203,10 +203,9 @@ public partial class WitchlightSystem
     /// plain words where it is not.
     ///
     /// The game makes a link out of `href` only for an address with a scheme it
-    /// knows — it splits on `://` and opens what begins with `http`. An
-    /// `announce_url` set to a bare host is a perfectly good thing to tell
-    /// somebody and a link that would do nothing at all when pressed, and text
-    /// that can be copied beats a press that goes nowhere.
+    /// knows. It splits on `://` and opens what begins with `http`. An
+    /// `announce_url` set to a bare host is worth telling somebody and would do
+    /// nothing when pressed, so it is written as text that can be copied.
     /// </summary>
     private static string AsLink(string where, string said) =>
         where.StartsWith("http", StringComparison.Ordinal) && where.Contains("://")

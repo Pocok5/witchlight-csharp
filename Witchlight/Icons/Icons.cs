@@ -7,37 +7,34 @@ using Vintagestory.API.Common;
 namespace Witchlight;
 
 /// <summary>
-/// The pictures a marker is drawn with.
+/// Exports the pictures a marker is drawn with.
 ///
-/// Waypoints carry an icon by name — `gravestone`, `home`, `trader` — and the
-/// game draws each from an SVG under `textures/icons/worldmap`. They are
-/// silhouettes filled with a single near-black, which is why the game can tint
-/// one any colour and why the map can too.
+/// A waypoint names its icon, such as `gravestone`, `home` or `trader`, and the
+/// game draws each from an SVG under `textures/icons/worldmap`. Each is a
+/// silhouette filled with a single near-black, so the game and the map can both
+/// tint one any colour.
 ///
-/// Every domain is asked, not just the game's own, so a mod that adds markers
-/// adds its icons here without anything knowing about it in advance.
+/// Reads every domain rather than only the game's own, so a mod that adds markers
+/// adds its icons without anything knowing about it in advance.
 ///
-/// The file names carry a sort prefix the game uses to order them in its own
-/// menu — `0-circle`, `01-turnip` — and a waypoint refers to the name without
-/// it, so the prefix is dropped on the way out.
+/// The file names carry a sort prefix the game orders its menu by, such as
+/// `0-circle` or `01-turnip`. A waypoint names the icon without that prefix, so
+/// this drops it on the way out.
 /// </summary>
 public static class Icons
 {
     /// <summary>
-    /// Where the game keeps them. Public because both sides read the same shelf:
-    /// the server writes what it can see and a client sends what the server
-    /// cannot, and the path spelled once on each side is a path that can be
-    /// changed on one of them.
+    /// The asset path the game keeps the icons under. Public because the server
+    /// and the client both read it, and spelling it once keeps them in step.
     /// </summary>
     public const string AssetPath = "textures/icons/worldmap";
 
     /// <summary>
     /// Writes every icon the server can see.
     ///
-    /// Says how many were written, how many there are, and which mods they came
-    /// from. A restart on unchanged assets writes none, and "0 written" on its own
-    /// reads exactly like a server that found no icons at all — which is every
-    /// marker on the map drawn as a plain shape.
+    /// Reports how many were written, how many there are, and which mods they came
+    /// from. A restart on unchanged assets writes none, and "0 written" alone
+    /// reads like a server that found no icons at all.
     /// </summary>
     public static (int Written, int Found, string From) Export(ICoreAPI api, string exports)
     {
@@ -87,7 +84,7 @@ public static class Icons
     /// <summary>
     /// Writes icons a client sent. Returns how many were new or different.
     ///
-    /// An icon already on disk and unchanged is left alone, so a client sending
+    /// Leaves an icon already on disk and unchanged alone, so a client sending
     /// the same set twice does not rewrite files the map service is watching.
     /// </summary>
     public static int Accept(IReadOnlyList<(string Name, byte[] Svg)> icons, string exports)
@@ -114,22 +111,22 @@ public static class Icons
         }
         catch (Exception)
         {
-            // A picture that cannot be written is a marker drawn as a plain shape,
-            // which is not worth failing a join over.
+            // A picture that cannot be written draws its marker as a plain
+            // shape, which is not worth failing a join over.
         }
 
         return written;
     }
 
-    /// <summary>Where the icons land, beside everything else the map service reads.</summary>
+    /// <summary>Returns the directory the icons are written to.</summary>
     public static string DirectoryIn(string exports) => Path.Combine(exports, "icons");
 
     /// <summary>
-    /// What is already on disk, by the names a waypoint would ask for.
+    /// Returns the icons already on disk, by the names a waypoint would ask for.
     ///
-    /// Here rather than beside the asking, because this file is what decides what
-    /// an icon is called and where one is kept, and a second reader of that
-    /// directory is a second thing that has to agree about both.
+    /// Lives here because this file decides what an icon is called and where one
+    /// is kept, so a second reader of that directory would have to agree about
+    /// both.
     /// </summary>
     public static List<string> Stored(string exports)
     {
@@ -151,11 +148,12 @@ public static class Icons
     }
 
     /// <summary>
-    /// The name a waypoint would use for this file, or null if it cannot be one.
+    /// Returns the name a waypoint would use for this file, or null when it
+    /// cannot be one.
     ///
     /// The name becomes a file and then part of a URL, and it arrives from
-    /// whatever mods are installed, so it is reduced to the characters that are
-    /// safe in both rather than trusted.
+    /// whatever mods are installed, so this reduces it to the characters that are
+    /// safe in both.
     /// </summary>
     public static string? NameOf(string fileName)
     {
@@ -163,7 +161,7 @@ public static class Icons
             ? fileName[..^4]
             : fileName;
 
-        // The sort prefix the game orders its menu by, which a waypoint omits.
+        // Drop the sort prefix the game orders its menu by. A waypoint omits it.
         var dash = name.IndexOf('-');
         if (dash > 0 && IsAllDigits(name[..dash]))
         {

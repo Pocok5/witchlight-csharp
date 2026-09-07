@@ -4,29 +4,25 @@ using System.IO;
 namespace Witchlight;
 
 /// <summary>
-/// Writing a file, and not writing one.
+/// Writes files atomically, and only when the content differs from what is
+/// already on disk.
 ///
-/// Two rules, both of which were spelled out at every call site until they were
-/// gathered here.
+/// Every write costs drive life, and the exports here are mostly the same bytes
+/// run after run. Comparing first skips those writes.
 ///
-/// A write is earned. Every write costs drive life, and the exports here are
-/// mostly the same bytes run after run: a palette rebuilt from unchanged assets,
-/// a name table for a block set nobody touched, an icon a second admin sent. So
-/// "is this already what is there" is one question with one right answer, and the
-/// write lives behind it rather than beside a condition repeated at each caller.
-///
-/// A write is whole. Everything here is read by the map service while the server
-/// runs, so a file is written beside itself and renamed into place — a reader
-/// sees the old bytes or the new ones and never half of either.
+/// The map service reads these files while the server runs. Each write goes to a
+/// temporary beside the file and is renamed into place, so a reader sees either
+/// the old bytes or the new ones and never half of either.
 /// </summary>
 public static class Disk
 {
     /// <summary>
-    /// Writes text where it differs from what is on disk. True when it wrote.
+    /// Writes text where it differs from what is on disk. Returns true when it
+    /// wrote.
     ///
-    /// A file that cannot be read is not the same as one that matches, so it is
-    /// written: the cost of being wrong that way is one write, and the cost of
-    /// being wrong the other way is an export that never lands.
+    /// An unreadable file counts as differing and is written. Being wrong that
+    /// way costs one write. Being wrong the other way costs an export that never
+    /// lands.
     /// </summary>
     public static bool Write(string path, string body)
     {
@@ -39,11 +35,10 @@ public static class Disk
         return true;
     }
 
-    /// <summary>Writes bytes where they differ from what is on disk. True when it wrote.</summary>
+    /// <summary>Writes bytes where they differ from what is on disk. Returns true when it wrote.</summary>
     public static bool WriteBytes(string path, byte[] body)
     {
-        // Length first: two pictures of the same thing almost never weigh the
-        // same, so the read is usually skipped.
+        // Comparing lengths first skips the read for most differing files.
         if (Same(path, () => new FileInfo(path).Length == body.Length
                              && File.ReadAllBytes(path).AsSpan().SequenceEqual(body)))
         {
@@ -57,8 +52,8 @@ public static class Disk
     /// <summary>
     /// Writes through a temporary beside the file and renames it into place.
     ///
-    /// Public for a caller that produces its bytes as it writes — a compressed
-    /// stream, say — and so has nothing to hand over to be compared first.
+    /// This is public for callers that produce their bytes as they write, such as
+    /// a compressed stream, and so have nothing to compare first.
     /// </summary>
     public static void Replace(string path, Action<string> write)
     {
@@ -76,25 +71,23 @@ public static class Disk
         }
         catch (Exception)
         {
-            // A write that failed part way leaves the temporary in the way of the
-            // next attempt, and it is not the file anybody asked for.
+            // A part-written temporary blocks the next attempt.
             try
             {
                 File.Delete(temporary);
             }
             catch (Exception)
             {
-                // Nothing further to try, and the original is still intact.
+                // Nothing further to try. The original is still intact.
             }
             throw;
         }
     }
 
     /// <summary>
-    /// Whether what is stored is already exactly this.
+    /// Reports whether the stored file already holds exactly this content.
     ///
-    /// Unreadable is not the same as identical: writing over a file this cannot
-    /// make sense of is the right answer to it.
+    /// An unreadable file reports false, so the caller overwrites it.
     /// </summary>
     private static bool Same(string path, Func<bool> matches)
     {
