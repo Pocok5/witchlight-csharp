@@ -9,6 +9,18 @@
     <!-- The mod is loaded by the game, which supplies these assemblies. -->
     <EnableDynamicLoading>true</EnableDynamicLoading>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <!-- Writes Witchlight.xml beside the DLL. A plugin references this assembly
+         at compile time, and this is what puts the documentation on every method
+         it calls into that plugin author's editor. See docs/PLUGINS.md in the
+         map service repository. -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <!-- The mod is not a library and its doc comments are written for people
+         reading the source, not as a documentation build. Turning the file on
+         makes the compiler start checking them, which reports a hundred missing
+         param tags and unresolved crefs in code no plugin ever calls and buries
+         anything real. The comments on the plugin API itself are complete and
+         are what a plugin author's editor shows. -->
+    <NoWarn>$(NoWarn);CS1591;CS1573;CS1574;CS1570;CS1572;CS0419</NoWarn>
 
     <!-- Where the game is installed. Override with -p:VintageStory=/path or the
          VINTAGE_STORY environment variable the official mod template uses. -->

@@ -28,6 +28,35 @@ public enum PluginScope
 }
 
 /// <summary>
+/// What becomes of the rows already kept when a shape no longer fits them.
+///
+/// A column added is carried onto existing rows either way. This decides the
+/// changes that cannot be carried — a column dropped, a key moved, a type or a
+/// scope changed — where the plugin is the only one that knows whether what it
+/// stored before still means anything.
+/// </summary>
+public enum PluginReshape
+{
+    /// <summary>
+    /// Leaves the rows where they are and registers nothing.
+    ///
+    /// The default. A plugin whose old rows are worth keeping reads them with
+    /// Query and writes them back with StoreMany under the new shape.
+    /// </summary>
+    Refuse,
+
+    /// <summary>
+    /// Keeps a copy, then builds the table again empty at the new shape.
+    ///
+    /// For a shape whose old rows measured something the new one does not, where
+    /// there is nothing to carry forward and refusing leaves the plugin storing
+    /// nothing at all. The copy is written before anything is dropped, and the
+    /// service names it in the log.
+    /// </summary>
+    Rebuild,
+}
+
+/// <summary>
 /// The shape a plugin declares for its rows.
 ///
 /// This is everything a plugin tells the service about its storage. The service
@@ -40,7 +69,9 @@ public enum PluginScope
 /// shape costs a lookup. Registering with a column added keeps the rows already
 /// there. Any other change is refused with the data left alone, and the plugin
 /// migrates it itself with <see cref="WitchlightPlugins.Query"/> and
-/// <see cref="WitchlightPlugins.StoreMany"/>.
+/// <see cref="WitchlightPlugins.StoreMany"/> — or declares <see cref="Rebuilding"/>
+/// to have the old rows set aside, where they measured something the new shape
+/// does not and there is nothing to carry forward.
 /// </summary>
 public sealed class PluginShape
 {
@@ -69,6 +100,16 @@ public sealed class PluginShape
 
     [JsonProperty("scope")]
     public string Scope { get; private set; } = "owner";
+
+    /// <summary>
+    /// What to do with rows already kept that this shape no longer fits.
+    ///
+    /// Sent to the service with the rest of the shape, but not part of what a
+    /// shape *is*: it says how to get from one shape to the next, so changing
+    /// only this is not itself a change to migrate.
+    /// </summary>
+    [JsonProperty("on_reshape")]
+    public string OnReshape { get; private set; } = "refuse";
 
     /// <summary>Adds a column and returns this shape.</summary>
     public PluginShape Column(string name, PluginKind kind)
@@ -103,6 +144,23 @@ public sealed class PluginShape
     public PluginShape SeenBy(PluginScope scope)
     {
         Scope = scope == PluginScope.World ? "world" : "owner";
+        return this;
+    }
+
+    /// <summary>
+    /// Says the rows already kept may be set aside when this shape no longer
+    /// fits them, and returns this shape.
+    ///
+    /// Declare this only where the old rows cannot be carried forward — where
+    /// they measured something this shape does not, so that reading them with
+    /// Query and writing them back with StoreMany would have nothing to write.
+    /// The service keeps a copy beside the plugin's database before it drops
+    /// anything and names it in the log, so this loses nothing irrecoverably;
+    /// it does mean players stop seeing what they had.
+    /// </summary>
+    public PluginShape Rebuilding()
+    {
+        OnReshape = "rebuild";
         return this;
     }
 }

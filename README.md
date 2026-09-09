@@ -32,6 +32,15 @@ only changes one side.
 See [ARCHITECTURE.md](ARCHITECTURE.md) for how any of this works
 internally, the full server command reference, and the palette handshake.
 
+## Plugins
+
+Another mod can keep rows on the map and draw them on the web map. It
+declares what its rows look like through this mod's `WitchlightPlugins` API,
+sends them, and ships a script the map page runs.
+
+See [docs/PLUGINS.md](https://github.com/Tekunogosu/witchlight/blob/main/docs/PLUGINS.md)
+in the map service repository for how to write one.
+
 ## Installing
 
 Install like any Vintage Story mod, **on the server and on clients**: the

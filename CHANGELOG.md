@@ -13,6 +13,20 @@ While Witchlight is alpha, a format change **clears the map** on start rather th
 upgrading it. It rebuilds as players explore. Read the release note before
 upgrading a server whose map you would rather keep.
 
+## 0.52.2
+
+**Deploy note:** both halves, upgraded together; nothing is cleared. No setting,
+no packet and no stored file changes. This release adds documentation and
+changes no behaviour.
+
+- **The build writes its own documentation file.** `Witchlight.xml` is now
+  emitted beside the DLL. A plugin references this assembly at compile time, and
+  this is what puts the documentation on `Register`, `Store`, `StoreMany`,
+  `Query` and `PluginShape` into a plugin author's editor. The doc comments were
+  already written and were reaching nobody outside this repository.
+- **Writing a plugin is documented.** `docs/PLUGINS.md` in the map service
+  repository covers both halves, and the README links to it.
+
 ## 0.52.1
 
 **Deploy note:** both halves, upgraded together; nothing is cleared. No setting,

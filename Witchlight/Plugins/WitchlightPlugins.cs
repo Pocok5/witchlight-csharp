@@ -151,7 +151,9 @@ public sealed class WitchlightPlugins
     ///
     /// Call once, from the plugin's own <c>Start</c>. Creates the plugin's table
     /// where there is none and carries an added column onto one already there.
-    /// Refuses any other change and reports it, leaving the rows where they are.
+    /// Refuses any other change and reports it, leaving the rows where they are —
+    /// unless the shape declared <see cref="PluginShape.Rebuilding"/>, which has
+    /// the old rows copied aside and the table built again at the new shape.
     ///
     /// A null return is not fatal. A plugin whose rows are not being kept should
     /// log that and go on running.
@@ -220,6 +222,12 @@ public sealed class WitchlightPlugins
     /// Queues the row and returns at once, so a plugin may call this wherever it
     /// finds something worth keeping. The queue goes out on the next drain.
     /// </summary>
+    /// <param name="id">The plugin's name, which is its modid.</param>
+    /// <param name="row">
+    /// The row. A field matching a declared column is stored under it. A field
+    /// matching none is ignored, and a declared column with no field is stored
+    /// as null.
+    /// </param>
     /// <param name="owner">
     /// The player the row belongs to. A world-scoped plugin passes null. Takes
     /// the player rather than their uid, so the uid and the name cannot be given
@@ -233,6 +241,9 @@ public sealed class WitchlightPlugins
             .Add(new Pending(owner?.PlayerUID ?? "", owner?.PlayerName ?? "", row));
 
     /// <summary>Stores many rows at once, onto the same queue.</summary>
+    /// <param name="id">The plugin's name, which is its modid.</param>
+    /// <param name="rows">The rows, each read as <see cref="Store"/> reads one.</param>
+    /// <param name="owner">The player the rows belong to, as <see cref="Store"/> takes one.</param>
     public void StoreMany(string id, IEnumerable<object> rows, IPlayer? owner = null)
     {
         var queue = _waiting.GetOrAdd(id, _ => new PendingRows());
@@ -246,7 +257,13 @@ public sealed class WitchlightPlugins
 
     /// <summary>
     /// Returns the rows the service is holding for this plugin.
+    ///
+    /// Reads the map's own port and sends no session, so an owner-scoped plugin
+    /// reads an empty list. A plugin migrating owner-scoped rows reads its own
+    /// database instead. Answers an empty array where the service could not be
+    /// asked.
     /// </summary>
+    /// <param name="id">The plugin's name, which is its modid.</param>
     /// <param name="ranges">
     /// The columns to bound and by how much. The plugin must have declared each
     /// one ranged. Passing none returns everything, which suits a small plugin
