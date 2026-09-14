@@ -39,16 +39,24 @@ public sealed class ModApi : IDisposable
     private readonly System.Func<int, bool> _shows;
     private readonly Microblocks _chiselled;
     private readonly string _exports;
+    /// <summary>
+    /// Answers the season a pulled column belongs to, and takes it into the
+    /// exported set so the seasonal pass keeps it current. Null where there is
+    /// no exporter, which is a service running without one.
+    /// </summary>
+    private readonly System.Func<int, int, byte[], byte>? _seasonForPulled;
     private volatile bool _running;
 
     public ModApi(
-        ICoreServerAPI api, ILogger log, string exports, System.Func<int, bool> shows, Microblocks chiselled)
+        ICoreServerAPI api, ILogger log, string exports, System.Func<int, bool> shows, Microblocks chiselled,
+        System.Func<int, int, byte[], byte>? seasonForPulled = null)
     {
         _api = api;
         _log = log;
         _exports = exports;
         _shows = shows;
         _chiselled = chiselled;
+        _seasonForPulled = seasonForPulled;
 
         var bind = Environment.GetEnvironmentVariable(BindVariable);
         _host = string.IsNullOrEmpty(bind) ? "127.0.0.1" : bind;
@@ -177,11 +185,16 @@ public sealed class ModApi : IDisposable
                 return;
             }
 
+            // The season travels with the record. Without it the service files
+            // the year's start, which draws a square of the wrong season in the
+            // middle of the right one and stays that way, because a pulled
+            // column is not in the set the seasonal pass walks.
             Respond(context, 200, JsonConvert.SerializeObject(new
             {
                 X = cx,
                 Z = cz,
                 Record = Convert.ToBase64String(record),
+                Season = _seasonForPulled?.Invoke(cx, cz, record),
             }));
         });
     }

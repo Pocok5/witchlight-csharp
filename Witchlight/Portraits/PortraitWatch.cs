@@ -152,7 +152,16 @@ public sealed class PortraitWatch
             _skin?.UnregisterListener(OnSkinChanged);
             _skin = skin;
             _skin?.RegisterModifiedListener("skinConfig", OnSkinChanged);
-            _changedAt = null;
+            // Subscribing to a skin is not a change to it, so this starts no wait
+            // of its own. It cannot cancel one either: both halves of a character
+            // arrive on the same tick when a world loads, and clearing the wait
+            // here threw away the first look the branch above had just armed. The
+            // watch then held nothing to compare against, so the next real change
+            // read as its first look and sent nothing either.
+            if (_worn is not null)
+            {
+                _changedAt = null;
+            }
         }
     }
 

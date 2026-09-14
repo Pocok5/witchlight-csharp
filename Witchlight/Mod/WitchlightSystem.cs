@@ -330,7 +330,8 @@ public partial class WitchlightSystem : ModSystem
             _pins = Pins.Read(api);
             _origins = Origins.Read(api);
             _modApi = new ModApi(
-                api, api.Logger, Settings.Exports, id => _palettes?.Shows(id) ?? true, Microblocks.In(api.World));
+                api, api.Logger, Settings.Exports, id => _palettes?.Shows(id) ?? true, Microblocks.In(api.World),
+                (cx, cz, record) => _exporter?.SeasonForPulled(cx, cz, record) ?? 0);
             _modApi.Start();
             StartService();
             BeginSeeding(api);

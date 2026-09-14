@@ -13,6 +13,64 @@ While Witchlight is alpha, a format change **clears the map** on start rather th
 upgrading it. It rebuilds as players explore. Read the release note before
 upgrading a server whose map you would rather keep.
 
+## 0.52.10
+
+Moved for the map service, which now offers five more keys on the map itself.
+Nothing in the server mod changed.
+
+## 0.52.9
+
+**Deploy note:** both halves, upgraded together; nothing is cleared. No setting,
+no packet and no stored file changes. Squares already drawn in the wrong season
+repair themselves as the year turns, once both halves are upgraded.
+
+- **A column the map pulls now travels with its season.** The map service asks
+  this mod for one column at a time to fill ground nobody has walked into. That
+  answer carried the ground and not the season, so the map filed the start of the
+  year and drew a chunk of spring grass in the middle of an autumn field. The
+  answer now carries the season, read off the game's own calendar for that
+  column. The column is also taken into the exported set, which is what the pass
+  that follows the turning year walks: without that the wrong season stayed for
+  the life of the world, because the pass never visited a column the export had
+  not sent.
+
+## 0.52.8
+
+**Deploy note:** both halves, upgraded together; nothing is cleared. No setting,
+no packet and no stored file changes.
+
+- **A player who changes clothes sends a new portrait again.** The watch that
+  notices a character changing subscribes to two things, the clothing inventory
+  and the skin, and both arrive on the same tick when a world loads. Subscribing
+  to the skin cleared the wait the clothing had just started, so the watch never
+  took the first look that records what a player is wearing. With nothing
+  recorded, the next real change read as that first look and sent nothing either.
+  A picture was still asked for on a join by a server holding none, so the fault
+  showed as a player whose appearance changed after joining keeping their old
+  portrait until they typed `/witchlight portrait`. Subscribing to the skin now
+  leaves a wait already running alone.
+
+## 0.52.7
+
+Moved for the map service. Nothing in the mod changed.
+
+## 0.52.6
+
+**Deploy note:** both halves, upgraded together; nothing is cleared. No setting,
+no packet and no stored file changes.
+
+This release is the map service's. A plugin's markers became editable in the
+marker editor and can say what they like in their popup; this half is unchanged
+and moves with it.
+
+## 0.52.5
+
+**Deploy note:** both halves, upgraded together; nothing is cleared. No setting,
+no packet and no stored file changes.
+
+This release is the map service's. The page gained a picker, a mark and a marker
+list a plugin may use; this half is unchanged and moves with it.
+
 ## 0.52.2
 
 **Deploy note:** both halves, upgraded together; nothing is cleared. No setting,

@@ -370,6 +370,33 @@ public sealed class Exporter
     public void Fetch() => _repair.Ask(Repair.PerStep);
 
     /// <summary>
+    /// Answers the season for a column the map service pulled straight from the
+    /// game, and takes the column into the exported set.
+    ///
+    /// A pull goes around the export: the service asks this mod for one column
+    /// over the API channel and files what comes back. Two things were missed by
+    /// going around. The record carries no season, so the service filed the
+    /// year's start and the ground drew in the wrong colours — a chunk-aligned
+    /// square of the wrong season in the middle of the right one. And the column
+    /// never entered the exported set, so the pass that follows the turning year
+    /// walked past it every time and the wrong season stayed for the life of the
+    /// world.
+    ///
+    /// Called on the game thread, from the API channel's own handler, because
+    /// reading the calendar for a position is the game's to answer.
+    /// </summary>
+    public byte SeasonForPulled(int chunkX, int chunkZ, byte[] record)
+    {
+        var edge = _api.WorldManager.ChunkSize;
+        var chunk = (chunkX, chunkZ);
+        var season = SeasonOf(chunk, edge);
+        // Recorded as exported with the season just read, so the seasonal pass
+        // finds it from now on and sends a correction when the year moves.
+        _known[chunk] = new Known(Crc32.Of(record), season);
+        return season;
+    }
+
+    /// <summary>
     /// Asks the service once what it already holds, and takes that as what has
     /// been sent.
     ///
