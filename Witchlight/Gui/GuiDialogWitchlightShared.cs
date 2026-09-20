@@ -23,16 +23,8 @@ namespace Witchlight;
 public class GuiDialogWitchlightShared : GuiDialogGeneric
 {
     private const string Composed = "witchlight-shared";
-    private const string NameInput = "nameInput";
-    private const string ColourPicker = "colorPicker";
-    private const string PicturePicker = "iconPicker";
     private const string PinSwitch = "pinSwitch";
     private const string PresetSwitch = "presetSwitch";
-
-    /// <summary>The game's own size and padding for a switch.</summary>
-    private const int SwitchSize = 30;
-    private const int SwitchPad = 4;
-    private const int SwitchWidth = 40;
 
     private readonly int[] _colours;
     private readonly string[] _pictures;
@@ -102,7 +94,7 @@ public class GuiDialogWitchlightShared : GuiDialogGeneric
         var label = ElementBounds.Fixed(0, 28, 100, 25);
         var field = label.RightCopy();
         var row = ElementBounds.Fixed(0, 28, 360, 25);
-        var toggle = ElementBounds.Fixed(0, 28, SwitchWidth, SwitchSize);
+        var toggle = ElementBounds.Fixed(0, 28, GuiElements.SwitchWidth, GuiElements.SwitchSize);
 
         var inside = ElementBounds.Fill.WithFixedPadding(GuiStyle.ElementToDialogPadding);
         inside.BothSizing = ElementSizing.FitToChildren;
@@ -116,30 +108,21 @@ public class GuiDialogWitchlightShared : GuiDialogGeneric
             .AddShadedDialogBG(inside, false)
             .AddDialogTitleBar(Heading(), () => TryClose())
             .BeginChildElements(inside)
-            .AddStaticText("Name", CairoFont.WhiteSmallText(), label = label.FlatCopy());
+            .AddStaticText(GuiElements.NameLabel, CairoFont.WhiteSmallText(), label = label.FlatCopy());
 
         if (_marker.Editable)
         {
-            compo = compo
-                .AddTextInput(field = field.FlatCopy().WithFixedWidth(220), _ => { },
-                    CairoFont.TextInput(), NameInput)
-                .AddStaticText("Colour", CairoFont.WhiteSmallText(),
-                    label = label.BelowCopy(0, 9))
-                .AddColorListPicker(_colours, OnColour,
-                    label = label.BelowCopy(0, 5).WithFixedSize(22, 22), 270, ColourPicker)
-                .AddStaticText("Picture", CairoFont.WhiteSmallText(),
-                    label = label.WithFixedPosition(0, label.fixedY + label.fixedHeight)
-                        .WithFixedWidth(200).BelowCopy())
-                .AddIconListPicker(_pictures, OnPicture,
-                    label = label.BelowCopy(0, 5).WithFixedSize(27, 27), 270, PicturePicker);
-            toggle = ElementBounds.Fixed(
-                0, label.fixedY + label.fixedHeight * 2 + 9 - 4, SwitchWidth, SwitchSize);
+            compo = compo.AddMarkerFields(
+                ref label, ref field, _colours, _pictures, OnColour, OnPicture);
+            toggle = GuiElements.UnderPickers(label);
         }
         else
         {
             compo = compo.AddStaticText(Markers.Title(_marker.Title), CairoFont.WhiteSmallText(),
                 field = field.FlatCopy().WithFixedWidth(220));
-            toggle = ElementBounds.Fixed(0, label.fixedY + label.fixedHeight + 9, SwitchWidth, SwitchSize);
+            toggle = ElementBounds.Fixed(
+                0, label.fixedY + label.fixedHeight + 9,
+                GuiElements.SwitchWidth, GuiElements.SwitchSize);
         }
 
         var keep = toggle.BelowCopy(0, 6);
@@ -147,13 +130,13 @@ public class GuiDialogWitchlightShared : GuiDialogGeneric
             // The pin is the one thing anybody may decide about somebody else's
             // marker. It holds the marker against the edge of their own map
             // instead of letting it scroll off, and no other map changes.
-            .AddSwitch(on => _pinned = on, toggle, PinSwitch, SwitchSize, SwitchPad)
-            .AddStaticText("Pin marker", CairoFont.WhiteSmallText(), Beside(toggle))
+            .AddSwitch(on => _pinned = on, toggle, PinSwitch, GuiElements.SwitchSize, GuiElements.SwitchPad)
+            .AddStaticText("Pin marker", CairoFont.WhiteSmallText(), GuiElements.Beside(toggle))
             // They may also copy its name, picture and colour into a preset of
             // their own for the block it was made on. The marker's owner does not
             // change.
-            .AddSwitch(on => _preset = on, keep, PresetSwitch, SwitchSize, SwitchPad)
-            .AddStaticText("Save as preset", CairoFont.WhiteSmallText(), Beside(keep))
+            .AddSwitch(on => _preset = on, keep, PresetSwitch, GuiElements.SwitchSize, GuiElements.SwitchPad)
+            .AddStaticText("Save as preset", CairoFont.WhiteSmallText(), GuiElements.Beside(keep))
             .AddSmallButton("Cancel", OnCancel,
                 row.FlatCopy().FixedUnder(keep, 30).WithFixedWidth(100),
                 EnumButtonStyle.Normal)
@@ -168,9 +151,9 @@ public class GuiDialogWitchlightShared : GuiDialogGeneric
         SingleComposer.GetSwitch(PresetSwitch).SetValue(_preset);
         if (_marker.Editable)
         {
-            SingleComposer.GetTextInput(NameInput).SetValue(Markers.Title(_marker.Title));
-            SingleComposer.ColorListPickerSetValue(ColourPicker, Math.Max(0, Array.IndexOf(_colours, _colour)));
-            SingleComposer.IconListPickerSetValue(PicturePicker, Math.Max(0, Array.IndexOf(_pictures, _picture)));
+            SingleComposer.GetTextInput(GuiElements.NameInput).SetValue(Markers.Title(_marker.Title));
+            SingleComposer.ColorListPickerSetValue(GuiElements.ColourPicker, Math.Max(0, Array.IndexOf(_colours, _colour)));
+            SingleComposer.IconListPickerSetValue(GuiElements.PicturePicker, Math.Max(0, Array.IndexOf(_pictures, _picture)));
         }
     }
 
@@ -178,11 +161,6 @@ public class GuiDialogWitchlightShared : GuiDialogGeneric
     ///  marker's name alone.</summary>
     private string Heading() =>
         string.IsNullOrEmpty(_marker.Owner) ? "Shared marker" : $"{_marker.Owner}'s marker";
-
-    /// <summary>Returns the bounds for the label beside a switch, level with the
-    ///  line of text the switch is centred on.</summary>
-    private static ElementBounds Beside(ElementBounds toggle) =>
-        ElementBounds.Fixed(toggle.fixedX + SwitchWidth + 6, toggle.fixedY + 4, 280, 25);
 
     private void OnColour(int index)
     {
@@ -218,7 +196,7 @@ public class GuiDialogWitchlightShared : GuiDialogGeneric
         };
         if (_marker.Editable)
         {
-            change.Title = SingleComposer.GetTextInput(NameInput).GetText();
+            change.Title = SingleComposer.GetTextInput(GuiElements.NameInput).GetText();
             change.Icon = _picture;
             change.Color = _colour;
         }

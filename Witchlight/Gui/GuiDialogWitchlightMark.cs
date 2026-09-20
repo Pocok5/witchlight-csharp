@@ -34,9 +34,6 @@ public class GuiDialogWitchlightMark : GuiDialogGeneric
     private const string PresetsScrollbar = "presetsScrollbar";
     private const string PresetsFind = "presetsFind";
     private const string PresetsRows = "presetsRows";
-    private const string NameInput = "nameInput";
-    private const string ColourPicker = "colorPicker";
-    private const string PicturePicker = "iconPicker";
     private const string PrivateSwitch = "privateSwitch";
     private const string PresetSwitch = "presetSwitch";
 
@@ -101,7 +98,8 @@ public class GuiDialogWitchlightMark : GuiDialogGeneric
         // start at. The box is placed first and the words follow it. Where the
         // column starts is settled below, once the picture picker reports how tall
         // it came out.
-        var toggle = ElementBounds.Fixed(0, 28, SwitchWidth, SwitchSize);
+        var toggle = ElementBounds.Fixed(
+            0, 28, GuiElements.SwitchWidth, GuiElements.SwitchSize);
 
         var inside = ElementBounds.Fill.WithFixedPadding(GuiStyle.ElementToDialogPadding);
         inside.BothSizing = ElementSizing.FitToChildren;
@@ -116,20 +114,8 @@ public class GuiDialogWitchlightMark : GuiDialogGeneric
             .AddDialogTitleBar($"Witchlight marker — {Where()}", () => TryClose())
             .BeginChildElements(inside)
 
-            .AddStaticText("Name", CairoFont.WhiteSmallText(), label = label.FlatCopy())
-            .AddTextInput(field = field.FlatCopy().WithFixedWidth(220), _ => { },
-                CairoFont.TextInput(), NameInput)
-
-            .AddStaticText("Colour", CairoFont.WhiteSmallText(),
-                label = label.BelowCopy(0, 9))
-            .AddColorListPicker(_colours, OnColour,
-                label = label.BelowCopy(0, 5).WithFixedSize(22, 22), 270, ColourPicker)
-
-            .AddStaticText("Picture", CairoFont.WhiteSmallText(),
-                label = label.WithFixedPosition(0, label.fixedY + label.fixedHeight)
-                    .WithFixedWidth(200).BelowCopy())
-            .AddIconListPicker(_pictures, OnPicture,
-                label = label.BelowCopy(0, 5).WithFixedSize(27, 27), 270, PicturePicker)
+            .AddStaticText(GuiElements.NameLabel, CairoFont.WhiteSmallText(), label = label.FlatCopy())
+            .AddMarkerFields(ref label, ref field, _colours, _pictures, OnColour, OnPicture)
 
             // The two answers the game's own window has no idea about, labelled in
             // words rather than with an emblem.
@@ -139,18 +125,20 @@ public class GuiDialogWitchlightMark : GuiDialogGeneric
             // reads it, so boxes on the right would make the eye cross a line of
             // text of unpredictable length to find the answer.
             .AddSwitch(on => _private = on,
-                toggle = Under(label), PrivateSwitch, SwitchSize, SwitchPad)
+                toggle = GuiElements.UnderPickers(label), PrivateSwitch,
+                GuiElements.SwitchSize, GuiElements.SwitchPad)
             .AddStaticText("Private", CairoFont.WhiteSmallText(),
-                label = Beside(toggle))
+                label = GuiElements.Beside(toggle))
 
             .AddSwitch(on => _preset = on,
-                toggle = toggle.BelowCopy(0, 6), PresetSwitch, SwitchSize, SwitchPad)
+                toggle = toggle.BelowCopy(0, 6), PresetSwitch,
+                GuiElements.SwitchSize, GuiElements.SwitchPad)
             // Label the switch with what it does rather than the block code it is
             // keyed on. The preset carries the pattern, and "keep as what
             // game:rock-granite-* starts as" is a sentence nobody reads to the end
             // of.
             .AddStaticText("Set as preset", CairoFont.WhiteSmallText(),
-                label = Beside(toggle))
+                label = GuiElements.Beside(toggle))
 
             // Level with each other under the last switch, one at each end of the
             // row, where the game's own window puts them. Positioned from the
@@ -171,38 +159,13 @@ public class GuiDialogWitchlightMark : GuiDialogGeneric
             .EndChildElements()
             .Compose();
 
-        SingleComposer.GetTextInput(NameInput).SetValue(_offer.Title);
+        SingleComposer.GetTextInput(GuiElements.NameInput).SetValue(_offer.Title);
         SingleComposer.GetSwitch(PrivateSwitch).SetValue(_private);
         SingleComposer.GetSwitch(PresetSwitch).SetValue(_preset);
-        SingleComposer.ColorListPickerSetValue(ColourPicker, Chosen(_colour));
-        SingleComposer.IconListPickerSetValue(PicturePicker, Array.IndexOf(_pictures, _picture));
+        SingleComposer.ColorListPickerSetValue(GuiElements.ColourPicker, Chosen(_colour));
+        SingleComposer.IconListPickerSetValue(
+            GuiElements.PicturePicker, Array.IndexOf(_pictures, _picture));
     }
-
-    /// <summary>The game's own switch height, padding and column width. Stated
-    ///  once so the two switch rows cannot come out at different heights.</summary>
-    private const int SwitchSize = 30;
-    private const int SwitchPad = 4;
-    private const int SwitchWidth = 40;
-
-    /// <summary>
-    /// Returns where the first switch goes, under whatever height the picture
-    /// picker came out at. A picker wraps to as many rows as the mods on the server
-    /// give it, so nothing here may assume its height.
-    /// </summary>
-    private static ElementBounds Under(ElementBounds pictures) =>
-        ElementBounds.Fixed(
-            0,
-            // Four pixels up, so the switch and its label read as one row. A
-            // switch is taller than a line of text.
-            pictures.fixedY + pictures.fixedHeight * 2 + 9 - 4,
-            SwitchWidth,
-            SwitchSize);
-
-    /// <summary>Returns the bounds for a switch's label, level with the line of
-    ///  text the switch is centred on and clear of the box by this window's
-    ///  standard gap.</summary>
-    private static ElementBounds Beside(ElementBounds toggle) =>
-        ElementBounds.Fixed(toggle.fixedX + SwitchWidth + 6, toggle.fixedY + 4, 280, 25);
 
     /// <summary>Where the marker goes, in world coordinates.</summary>
     private string Where() =>
@@ -515,17 +478,17 @@ public class GuiDialogWitchlightMark : GuiDialogGeneric
     {
         if (preset.Title.Length > 0)
         {
-            SingleComposer.GetTextInput(NameInput).SetValue(preset.Title);
+            SingleComposer.GetTextInput(GuiElements.NameInput).SetValue(preset.Title);
         }
         if (Array.IndexOf(_pictures, preset.Icon) >= 0)
         {
             _picture = preset.Icon;
-            SingleComposer.IconListPickerSetValue(PicturePicker, Array.IndexOf(_pictures, _picture));
+            SingleComposer.IconListPickerSetValue(GuiElements.PicturePicker, Array.IndexOf(_pictures, _picture));
         }
         if (Markers.Packed(preset.Color) is { } packed && Array.IndexOf(_colours, packed) >= 0)
         {
             _colour = Markers.Hex(packed);
-            SingleComposer.ColorListPickerSetValue(ColourPicker, Chosen(_colour));
+            SingleComposer.ColorListPickerSetValue(GuiElements.ColourPicker, Chosen(_colour));
         }
         if (preset.Private != Mark.Unsaid)
         {
@@ -564,7 +527,7 @@ public class GuiDialogWitchlightMark : GuiDialogGeneric
             // This window asked every question a preset would have answered, so a
             // preset must not answer them again over the top.
             UsePreset = false,
-            Title = SingleComposer.GetTextInput(NameInput).GetText(),
+            Title = SingleComposer.GetTextInput(GuiElements.NameInput).GetText(),
             Icon = _picture,
             Color = _colour,
             Private = Mark.Says(_private),
@@ -574,15 +537,4 @@ public class GuiDialogWitchlightMark : GuiDialogGeneric
         TryClose();
         return true;
     }
-}
-
-/// <summary>
-/// Bounds a list picker's index before it is used.
-///
-/// The game hands back whatever was clicked, and a picker whose list changed under
-/// it can hand back an index past the end. Both pickers call this.
-/// </summary>
-public static class GuiElements
-{
-    public static int Within(int index, int many) => index < 0 || index >= many ? 0 : index;
 }
