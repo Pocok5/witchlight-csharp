@@ -1,0 +1,188 @@
+# Builds the mod and packages it four ways, then attaches the archives to a
+# GitHub release.
+#
+# This runs when a tag beginning with v is pushed, and when it is started by
+# hand. Pushing commits to omega does not run it.
+#
+# A tag names a commit and does not belong to a branch, so the tag filter below
+# cannot say "on omega". The guard job says it instead: it refuses a tag whose
+# commit omega does not contain.
+#
+# The map service is a separate program in a separate repository. Its own
+# release workflow builds it for both platforms, and this reads the binaries
+# from the release carrying the same tag. So the service is released first, and
+# a tag pushed here before that fails in the guard rather than halfway through.
+name: release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  # The repository the map service is built in.
+  SERVICE_REPO: Tekunogosu/witchlight
+  # The game the mod is compiled against. The build reads assemblies out of this
+  # version's client, so the number is pinned here rather than tracking latest:
+  # a game release would otherwise change what a rebuilt tag produces.
+  GAME_VERSION: 1.22.7
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # --contains reads branch refs, and a shallow checkout has none.
+          fetch-depth: 0
+
+      - name: Refuse a tag that is not on omega
+        if: github.event_name == 'push'
+        run: |
+          if ! git branch --contains "${{ github.ref_name }}" --format='%(refname:short)' \
+               | grep -qx omega; then
+            echo "::error::${{ github.ref_name }} is not on omega. Nothing was built."
+            exit 1
+          fi
+
+      - name: Read the version
+        id: version
+        run: |
+          version=$(jq -r '.version' Witchlight/modinfo.json)
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "the mod is $version"
+
+      - name: Check the tag against the version
+        if: github.event_name == 'push'
+        run: |
+          tag="${{ github.ref_name }}"
+          version="${{ steps.version.outputs.version }}"
+          if [ "$tag" != "v$version" ]; then
+            echo "::error::tag $tag does not match modinfo.json version $version."
+            exit 1
+          fi
+
+      # Said here rather than discovered after the game has been downloaded and
+      # the mod compiled, so the common mistake — tagging this repository before
+      # the service — costs one short job.
+      - name: Check that the map service has been released
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="v${{ steps.version.outputs.version }}"
+          if ! gh release view "$tag" --repo "$SERVICE_REPO" > /dev/null 2>&1; then
+            echo "::error::$SERVICE_REPO has no release $tag. Release the map service first."
+            exit 1
+          fi
+
+  package:
+    needs: guard
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '10.0.x'
+
+      # The mod compiles against assemblies the game ships and this repository
+      # does not carry. They are read out of the client rather than the server
+      # because OpenTK.Graphics is in the client alone, and Portraits/Readback.cs
+      # needs it to compile.
+      - name: Cache the game
+        id: game
+        uses: actions/cache@v6
+        with:
+          path: game
+          key: vintagestory-client-${{ env.GAME_VERSION }}
+
+      - name: Download the game
+        if: steps.game.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p game
+          curl -sSfL --retry 3 \
+            "https://cdn.vintagestory.at/gamefiles/stable/vs_client_linux-x64_$GAME_VERSION.tar.gz" \
+            | tar xz -C game --strip-components=1
+
+      - name: Download the map service
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="v${{ needs.guard.outputs.version }}"
+          mkdir -p service
+          gh release download "$tag" --repo "$SERVICE_REPO" --dir service \
+            --pattern 'witchlight-linux-x64' --pattern 'witchlight-win-x64.exe'
+
+          # A downloaded file carries no execute bit, and the packaging runs the
+          # Linux binary to check its version.
+          chmod +x service/witchlight-linux-x64
+
+          # The Windows binary is checked by its name, so it is named for the
+          # version it belongs to.
+          mv service/witchlight-win-x64.exe \
+             "service/witchlight-${{ needs.guard.outputs.version }}-win-x64.exe"
+
+      # The notice the licences ask to travel with the binary lives in the
+      # service's repository, beside the source that was compiled.
+      - name: Download the notice
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="v${{ needs.guard.outputs.version }}"
+          gh api "repos/$SERVICE_REPO/contents/THIRD-PARTY.md?ref=$tag" \
+            --jq '.content' | base64 -d > THIRD-PARTY.md
+
+      # One build, four archives. package.sh is what the mod is released with by
+      # hand, so the workflow runs it rather than assembling zips of its own that
+      # could drift from it.
+      - name: Package
+        env:
+          VINTAGE_STORY: ${{ github.workspace }}/game
+        run: |
+          version="${{ needs.guard.outputs.version }}"
+
+          # Built once; the four archives differ only in which services travel
+          # with the same assembly.
+          dotnet build Witchlight/Witchlight.csproj -c Release --nologo -v quiet
+
+          for target in server windows universal client; do
+            ./package.sh --target "$target" --no-build \
+              --service service/witchlight-linux-x64 \
+              --service-win "service/witchlight-$version-win-x64.exe" \
+              --notices THIRD-PARTY.md \
+              --out dist
+          done
+          ls -la dist
+
+      - name: Upload the archives
+        uses: actions/upload-artifact@v7
+        with:
+          name: archives
+          path: dist/*.zip
+          if-no-files-found: error
+
+  release:
+    needs: [guard, package]
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: archives
+          path: dist
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ github.ref_name }}" \
+            --repo "${{ github.repository }}" \
+            --title "${{ github.ref_name }}" \
+            --generate-notes \
+            dist/*.zip

@@ -13,6 +13,35 @@ While Witchlight is alpha, a format change **clears the map** on start rather th
 upgrading it. It rebuilds as players explore. Read the release note before
 upgrading a server whose map you would rather keep.
 
+## 0.53.0
+
+**Deploy note:** both halves, upgraded together; nothing is cleared. No setting,
+no address, no stored file and no database table changes. A server already
+running the Linux service keeps the archive it has always used.
+
+- **The mod runs its map service on Windows as well as Linux.** The archive
+  carries a binary for each, and the mod starts the one that matches the machine.
+  A machine with neither exports the map as before and leaves `witchlight serve`
+  to be run by hand.
+- **The mod is built and released by GitHub.** A workflow packages four archives:
+  a server archive carrying the Linux service, one carrying the Windows service,
+  a universal archive carrying both, and a client archive carrying neither. It
+  runs when a tag beginning with `v` is pushed and when it is started by hand;
+  pushing commits runs nothing.
+- `package.sh` takes `--target universal` and `--target windows`, and
+  `--service-win FILE` for the Windows binary. That binary is built on a Windows
+  machine and named rather than built here.
+
+## 0.52.14
+
+Moved for the map service, where the chunk grid's colour can now be set.
+Nothing in the server mod changed.
+
+## 0.52.13
+
+Moved for the map service, which tidied how its store writes and how the page
+sends JSON. Nothing in the server mod changed.
+
 ## 0.52.10
 
 Moved for the map service, which now offers five more keys on the map itself.

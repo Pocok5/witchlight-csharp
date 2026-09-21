@@ -10,15 +10,23 @@
 #
 #   ./package.sh                        a server archive, into dist/
 #   ./package.sh --target client        the same mod without the map service
+#   ./package.sh --target universal     one archive carrying both services
+#   ./package.sh --target windows       a server archive for a Windows host
 #   ./package.sh --install DIR          also copy it into a Mods folder
 #   ./package.sh --no-build             package whatever was built last
-#   ./package.sh --service FILE         use this map service binary
+#   ./package.sh --service FILE         use this Linux map service binary
+#   ./package.sh --service-win FILE     use this Windows map service binary
 #   ./package.sh --no-service           a server archive without one
 #   ./package.sh --notices FILE         use this third-party notice file
 #   ./package.sh --service-repo DIR     where the map service source lives
 #
-# The client archive is named <modid>_<version>_client.zip so that both can sit in
-# dist/ at once rather than one quietly overwriting the other.
+# Each archive but the server one carries a suffix — _client, _universal,
+# _windows — so that all of them can sit in dist/ at once rather than one quietly
+# overwriting the next.
+#
+# A target says which map services travel with the mod. The assembly is the same
+# in every archive; a server is handed the service for the machine it runs on, a
+# universal archive carries both, and a client has no use for either.
 #
 # Both halves are built here, because they are one release. The map service is a
 # separate program in a separate repository, so where that repository is has to be
@@ -71,6 +79,7 @@ out="$here/dist"
 build=1
 install_to=""
 service="${WITCHLIGHT_SERVICE:-}"
+service_win="${WITCHLIGHT_SERVICE_WIN:-}"
 notices="${WITCHLIGHT_NOTICES:-}"
 # The map service's own repository, so this script can build it as well as bundle
 # it. Empty means nothing said, which is an error only when a service is wanted
@@ -82,12 +91,18 @@ target=server
 # What the map service's binary is called once it is built.
 service_name=witchlight
 
+# Where each platform's binary sits inside the archive. The mod reads these same
+# two paths; see BundledService.cs.
+linux_at="service/linux-x64/witchlight"
+windows_at="service/win-x64/witchlight.exe"
+
 while [ $# -gt 0 ]; do
     case "$1" in
         --install) install_to="${2:?--install needs a directory}"; shift 2 ;;
         --out)     out="${2:?--out needs a directory}"; shift 2 ;;
         --no-build) build=0; shift ;;
         --service) service="${2:?--service needs a file}"; shift 2 ;;
+        --service-win) service_win="${2:?--service-win needs a file}"; shift 2 ;;
         --service-repo) service_repo="${2:?--service-repo needs a directory}"; shift 2 ;;
         --notices) notices="${2:?--notices needs a file}"; shift 2 ;;
         --no-service) want_service=0; shift ;;
@@ -100,13 +115,24 @@ while [ $# -gt 0 ]; do
     esac
 done
 
+# Which platforms' services this target carries. A target is the whole of the
+# decision, so nothing else has to be remembered alongside it.
+want_linux=0
+want_windows=0
 case "$target" in
-    server) ;;
-    # A client has nothing to serve. Stated here rather than by the caller also
-    # remembering --no-service, so that --target is the whole of the decision.
-    client) want_service=0 ;;
-    *) echo "package: --target takes client or server, not $target" >&2; exit 2 ;;
+    server)    want_linux=1 ;;
+    windows)   want_windows=1 ;;
+    universal) want_linux=1; want_windows=1 ;;
+    # A client has nothing to serve.
+    client)    want_service=0 ;;
+    *) echo "package: --target takes client, server, windows or universal, not $target" >&2
+       exit 2 ;;
 esac
+
+if [ "$want_service" -eq 0 ]; then
+    want_linux=0
+    want_windows=0
+fi
 
 # The mod's own metadata is the single source of truth for what this is called.
 modid=$(jq -r '.modid' "$modinfo")
@@ -158,7 +184,7 @@ if [ "$build" -eq 1 ]; then
     # The map service first, because it is the half that takes twenty seconds and
     # the half whose failure is worth seeing before anything else has happened.
     # Skipped for a client archive, which carries none of it.
-    if [ "$want_service" -eq 1 ] && [ -z "$service" ]; then
+    if [ "$want_linux" -eq 1 ] && [ -z "$service" ]; then
         needs_repo
         if ! cargo build --release --manifest-path "$service_repo/Cargo.toml" \
                 > "$log" 2>&1; then
@@ -187,16 +213,26 @@ assembly="$release/Witchlight.dll"
 
 # A mod that cannot start the map is the thing this is meant to prevent, so a
 # missing service stops the packaging rather than shipping quietly without one.
-if [ "$want_service" -eq 1 ] && [ -z "$service" ]; then
+if [ "$want_linux" -eq 1 ] && [ -z "$service" ]; then
     needs_repo
     service=$(service_binary)
 fi
 
-if [ "$want_service" -eq 1 ] && [ ! -f "$service" ]; then
+if [ "$want_linux" -eq 1 ] && [ ! -f "$service" ]; then
     echo "package: no map service binary at $service." >&2
     echo "  Drop --no-build and it is built from $service_repo," >&2
     echo "  or name one outright with --service FILE," >&2
     echo "  or package without it with --no-service." >&2
+    exit 1
+fi
+
+# A Windows binary is built on a Windows machine, which this is not, so it is
+# never built here and must be named. The release workflow builds it on a
+# Windows runner and passes it in.
+if [ "$want_windows" -eq 1 ] && [ ! -f "${service_win:-}" ]; then
+    echo "package: --target $target needs a Windows map service binary." >&2
+    echo "  Name one with --service-win FILE. It is not built here: it is built" >&2
+    echo "  on a Windows machine, which the release workflow does." >&2
     exit 1
 fi
 
@@ -206,7 +242,7 @@ fi
 # service was not, which leaves a map whose page reports the version before last
 # — and, because the viewer's assets used to be addressed by that number, a
 # browser that never fetched the new ones at all.
-if [ "$want_service" -eq 1 ]; then
+if [ "$want_linux" -eq 1 ]; then
     built=$("$service" --version 2>/dev/null | awk '{print $NF}')
     if [ "$built" != "$version" ]; then
         echo "package: the map service is $built and the mod is $version." >&2
@@ -216,6 +252,18 @@ if [ "$want_service" -eq 1 ]; then
         echo "  service: $service" >&2
         exit 1
     fi
+fi
+
+# The Windows binary is checked by its name rather than by running it, because
+# this machine cannot run it. The workflow that builds it names it after the
+# version it was built from.
+if [ "$want_windows" -eq 1 ]; then
+    case "$service_win" in
+        *"$version"*) ;;
+        *) echo "package: $service_win does not name version $version." >&2
+           echo "  Both halves ship as one archive and must carry one version." >&2
+           exit 1 ;;
+    esac
 fi
 
 # Every permissive licence in the service binary asks the same thing of a copy:
@@ -230,7 +278,8 @@ if [ "$want_service" -eq 1 ] && [ -z "$notices" ] && [ -n "$service_repo" ]; the
     notices="$service_repo/THIRD-PARTY.md"
 fi
 
-if [ "$want_service" -eq 1 ] && [ ! -f "${notices:-}" ]; then
+if [ "$want_service" -eq 1 ] && [ ! -f "${notices:-}" ] \
+   && { [ "$want_linux" -eq 1 ] || [ "$want_windows" -eq 1 ]; }; then
     echo "package: no third-party notice found for the map service. Generate it with" >&2
     echo "  ./licenses.py > THIRD-PARTY.md   (in the map service repository)" >&2
     echo "or name one with --notices FILE." >&2
@@ -243,42 +292,68 @@ fi
     exit 1
 }
 
-if [ "$want_service" -eq 1 ]; then :; else service=""; notices=""; fi
+[ "$want_linux" -eq 1 ]   || service=""
+[ "$want_windows" -eq 1 ] || service_win=""
+[ "$want_service" -eq 1 ] || notices=""
 
 mkdir -p "$out"
 suffix=""
-[ "$target" = "client" ] && suffix="_client"
+[ "$target" = "client" ]    && suffix="_client"
+[ "$target" = "universal" ] && suffix="_universal"
+[ "$target" = "windows" ]   && suffix="_windows"
 archive="$out/${modid}_${version}${suffix}.zip"
 
 # Everything the game reads, at the root of the zip. Optional pieces are included
 # when they exist so adding an icon or assets later needs no change here.
-python3 - "$archive" "$modinfo" "$assembly" "$project" "$service" "$here/LICENSE" "$notices" <<'PY'
-import pathlib, sys, zipfile
+python3 - "$archive" "$modinfo" "$assembly" "$project" "$service" "$here/LICENSE" \
+         "$notices" "$service_win" "$linux_at" "$windows_at" <<'PY'
+import pathlib, stat, sys, zipfile
 
 archive, modinfo, assembly, project = (pathlib.Path(p) for p in sys.argv[1:5])
 service, licence, notices = sys.argv[5], pathlib.Path(sys.argv[6]), sys.argv[7]
+service_win, linux_at, windows_at = sys.argv[8], sys.argv[9], sys.argv[10]
 included = []
 
-# Where the mod looks for it. One platform for now; a second is a second entry
-# under service/ and the mod picking the one that matches the machine.
-SERVICE_AT = "service/linux-x64/witchlight"
+# Where the mod looks for each one. BundledService.cs reads these same paths and
+# picks the one matching the machine it starts on.
+services = [(service, linux_at, True), (service_win, windows_at, False)]
+
+
+def write_service(zip_file, source, name, executable):
+    """Writes a binary into the archive, keeping the execute bit on the ones
+    that need one.
+
+    A zip records permissions only if they are set on the entry, and the mod
+    sets them again when it unpacks. Setting them here means the binary is also
+    runnable to anyone who opens the archive by hand."""
+    info = zipfile.ZipInfo.from_file(source, name)
+    info.compress_type = zipfile.ZIP_DEFLATED
+    if executable:
+        info.external_attr = (stat.S_IFREG | 0o755) << 16
+    with open(source, "rb") as handle:
+        zip_file.writestr(info, handle.read())
+
 
 with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as zip_file:
     for path in (modinfo, assembly):
         zip_file.write(path, path.name)
         included.append(path.name)
 
-    # The mod's own terms, in both archives: the assembly is this project's code
+    # The mod's own terms, in every archive: the assembly is this project's code
     # whether or not a map service travels with it.
     zip_file.write(licence, licence.name)
     included.append(licence.name)
 
-    if service:
-        zip_file.write(service, SERVICE_AT)
-        included.append(SERVICE_AT)
+    carried = False
+    for source, name, executable in services:
+        if source:
+            write_service(zip_file, source, name, executable)
+            included.append(name)
+            carried = True
 
-        # Only where the binary is. A client archive links none of it and would
-        # be claiming to carry code it does not.
+    if carried:
+        # Only where a binary is. A client archive links none of it and would be
+        # claiming to carry code it does not.
         zip_file.write(notices, "THIRD-PARTY.md")
         included.append("THIRD-PARTY.md")
 
@@ -298,7 +373,18 @@ print("\n".join(f"  {name}" for name in included))
 PY
 
 size=$(stat -c%s "$archive")
-echo "packaged $modid $version for a $target ($side), $((size / 1024)) KiB"
+# Which services went in, named rather than implied, so the line says what the
+# archive actually carries.
+carrying="no map service"
+if [ "$want_linux" -eq 1 ] && [ "$want_windows" -eq 1 ]; then
+    carrying="the Linux and Windows map services"
+elif [ "$want_linux" -eq 1 ]; then
+    carrying="the Linux map service"
+elif [ "$want_windows" -eq 1 ]; then
+    carrying="the Windows map service"
+fi
+
+echo "packaged $modid $version, target $target ($side), with $carrying, $((size / 1024)) KiB"
 echo "  $archive"
 
 if [ -n "$install_to" ]; then

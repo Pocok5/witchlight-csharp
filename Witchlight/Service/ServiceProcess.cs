@@ -48,8 +48,42 @@ public sealed class ServiceProcess : IDisposable
     /// <summary>The path of the service's own log file.</summary>
     public static string LogPath => Path.Combine(GamePaths.Logs, "witchlight-service.log");
 
+    /// <summary>The path the previous run's log is kept at.</summary>
+    public static string PreviousLogPath =>
+        Path.Combine(GamePaths.Logs, "witchlight-service.previous.log");
+
     /// <summary>True while this class's service process is running.</summary>
     public bool Running => _process is { HasExited: false };
+
+    /// <summary>
+    /// Moves the last run's log aside, so starting the service again does not
+    /// erase why the last one stopped.
+    ///
+    /// Keeps one run back and no more. Two files an operator can name beat a
+    /// numbered set nobody prunes, and the run before last has never been the
+    /// one asked for.
+    ///
+    /// A failure here is not worth refusing to start over. The log is how a
+    /// fault is read, not part of serving the map, so this reports and carries
+    /// on.
+    /// </summary>
+    private void KeepLastLog()
+    {
+        try
+        {
+            if (!File.Exists(LogPath) || new FileInfo(LogPath).Length == 0)
+            {
+                return;
+            }
+
+            File.Move(LogPath, PreviousLogPath, overwrite: true);
+        }
+        catch (Exception error)
+        {
+            _api.Logger.Warning(
+                "[witchlight] could not keep the last service log: {0}", error.Message);
+        }
+    }
 
     /// <summary>
     /// Unpacks the bundled service and creates its configuration file, without
@@ -107,6 +141,15 @@ public sealed class ServiceProcess : IDisposable
             // one's.
             Forget();
 
+            // Keep the last run's log before this one truncates it.
+            //
+            // A service that stopped on its own wrote why it stopped into this
+            // file, and the first thing an operator does is start it again,
+            // which is what would erase it. The copy is what they read after
+            // that.
+            Directory.CreateDirectory(GamePaths.Logs);
+            KeepLastLog();
+
             // Truncate the log on start, and share it so a tail already watching
             // it keeps working across a restart.
             //
@@ -116,7 +159,6 @@ public sealed class ServiceProcess : IDisposable
             // reachable before `AutoFlush` is set. Dispose whatever a previous
             // run left open, since a service that stopped on its own never
             // closed one.
-            Directory.CreateDirectory(GamePaths.Logs);
             lock (_writing)
             {
                 _log?.Dispose();
@@ -295,10 +337,31 @@ public sealed class ServiceProcess : IDisposable
 
         Say($"witchlight: stopped on its own (exit {code})");
         _api.Logger.Warning(
-            "[witchlight] the map service stopped on its own (exit {0}). See {1}, and "
-            + "`/witchlight service start` to run it again",
-            code, LogPath);
+            "[witchlight] the map service stopped on its own (exit {0}: {1}). Its log is {2}, "
+            + "and starting it again keeps that log at {3}. `/witchlight service start` runs it "
+            + "again",
+            code, Meaning(code), LogPath, PreviousLogPath);
     }
+
+    /// <summary>
+    /// Says what an exit code means, in the words of what happened rather than
+    /// the number.
+    ///
+    /// The number on its own sends an operator to a search engine. These four
+    /// cover every way this service has been seen to stop.
+    /// </summary>
+    private static string Meaning(string code) => code switch
+    {
+        "0" => "it ended without being asked to, which it should not do while serving",
+        "1" => "it reported a fault it could not carry on from, named on the last lines of its log",
+        "101" => "it panicked; the panic and the thread it happened on are in its log",
+        "127" => "the executable could not be run at all, so nothing was logged",
+        "134" => "it was aborted",
+        "137" => "it was killed, which on most machines means the system ran out of memory",
+        "139" => "it stopped on a memory fault",
+        "143" => "something outside the game asked it to stop",
+        _ => "an unexpected stop; its log holds whatever it managed to say",
+    };
 
     /// <summary>Returns the process's exit code, or "unknown" when it has none.</summary>
     private static string Exited(Process? which)

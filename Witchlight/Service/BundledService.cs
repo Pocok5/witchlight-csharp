@@ -17,11 +17,28 @@ namespace Witchlight;
 /// </summary>
 public static class BundledService
 {
-    /// <summary>The path of the binary inside the mod archive.</summary>
-    private const string BundledAt = "service/linux-x64/witchlight";
+    /// <summary>The path of the Linux binary inside the mod archive.</summary>
+    private const string LinuxAt = "service/linux-x64/witchlight";
+
+    /// <summary>The path of the Windows binary inside the mod archive.</summary>
+    private const string WindowsAt = "service/win-x64/witchlight.exe";
+
+    /// <summary>
+    /// The path of the binary this machine runs, or null when the mod carries
+    /// none for it.
+    ///
+    /// An archive can hold one platform or both. This reports where to look for
+    /// the one that matches, and the caller treats a missing entry as a mod
+    /// packaged without a service.
+    /// </summary>
+    private static string? BundledAt =>
+        RuntimeInformation.ProcessArchitecture != Architecture.X64 ? null
+        : RuntimeInformation.IsOSPlatform(OSPlatform.Linux) ? LinuxAt
+        : RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? WindowsAt
+        : null;
 
     /// <summary>The name of the unpacked binary.</summary>
-    private const string Name = "witchlight";
+    private static string Name => OperatingSystem.IsWindows() ? "witchlight.exe" : "witchlight";
 
     /// <summary>
     /// Writes the bundled service out where it can be run, once per version, and
@@ -37,8 +54,7 @@ public static class BundledService
     /// </summary>
     public static string? Unpack(ICoreServerAPI api, Mod mod)
     {
-        if (!RuntimeInformation.IsOSPlatform(OSPlatform.Linux)
-            || RuntimeInformation.ProcessArchitecture != Architecture.X64)
+        if (BundledAt is not { } bundledAt)
         {
             api.Logger.Notification(
                 "[witchlight] no bundled map service for {0} {1} — the map will export as usual, "
@@ -57,11 +73,11 @@ public static class BundledService
             // archive once it is installed.
             var source = mod.SourcePath;
             var folder = Directory.Exists(source);
-            var origin = folder ? Path.Combine(source, BundledAt) : source;
+            var origin = folder ? Path.Combine(source, bundledAt) : source;
 
             if (!File.Exists(origin))
             {
-                return Missing(api, source);
+                return Missing(api, source, bundledAt);
             }
 
             var packed = File.GetLastWriteTimeUtc(origin);
@@ -79,9 +95,9 @@ public static class BundledService
             else
             {
                 using var archive = ZipFile.OpenRead(origin);
-                if (archive.GetEntry(BundledAt) is not { } entry)
+                if (archive.GetEntry(bundledAt) is not { } entry)
                 {
-                    return Missing(api, source);
+                    return Missing(api, source, bundledAt);
                 }
                 entry.ExtractToFile(executable, overwrite: true);
             }
@@ -107,9 +123,10 @@ public static class BundledService
     /// <summary>
     /// Sets the execute bits on the unpacked binary.
     ///
-    /// Tests the platform here even though <see cref="Unpack"/> only unpacks a
-    /// Linux build. The compiler cannot see that test from three call frames
-    /// away, and neither can the next reader of this line.
+    /// Windows has no execute bit and needs nothing done, so this returns there.
+    /// The test is made here rather than at the call site because the compiler
+    /// cannot see it from three call frames away, and neither can the next
+    /// reader of this line.
     /// </summary>
     private static void MakeRunnable(string executable)
     {
@@ -125,12 +142,13 @@ public static class BundledService
             | UnixFileMode.OtherRead | UnixFileMode.OtherExecute);
     }
 
-    private static string? Missing(ICoreServerAPI api, string source)
+    private static string? Missing(ICoreServerAPI api, string source, string bundledAt)
     {
         api.Logger.Warning(
-            "[witchlight] {0} carries no map service at {1} — it was packaged without one. "
-            + "The map will export as usual, and `witchlight serve` run yourself will serve it",
-            source, BundledAt);
+            "[witchlight] {0} carries no map service at {1} — it was packaged without one, "
+            + "or without the one this machine needs. The map will export as usual, and "
+            + "`witchlight serve` run yourself will serve it",
+            source, bundledAt);
         return null;
     }
 }
