@@ -8,7 +8,7 @@
 # which half to start, so the code is the same either way; what differs is that a
 # server is handed the map service and a client has no use for a megabyte of it.
 #
-#   ./package.sh                        a server archive, into dist/
+#   ./package.sh                        a Linux server archive, into dist/
 #   ./package.sh --target client        the same mod without the map service
 #   ./package.sh --target universal     one archive carrying both services
 #   ./package.sh --target windows       a server archive for a Windows host
@@ -20,8 +20,8 @@
 #   ./package.sh --notices FILE         use this third-party notice file
 #   ./package.sh --service-repo DIR     where the map service source lives
 #
-# Each archive but the server one carries a suffix — _client, _universal,
-# _windows — so that all of them can sit in dist/ at once rather than one quietly
+# Each archive carries a suffix naming what it is — _linux, _windows, _universal,
+# _client — so that all of them can sit in dist/ at once rather than one quietly
 # overwriting the next.
 #
 # A target says which map services travel with the mod. The assembly is the same
@@ -297,7 +297,11 @@ fi
 [ "$want_service" -eq 1 ] || notices=""
 
 mkdir -p "$out"
+# Every archive names what it carries. The server archive was once the only one
+# with a service in it and so needed no word for which; it sits beside a Windows
+# one now, and an unqualified name no longer says which machine it is for.
 suffix=""
+[ "$target" = "server" ]    && suffix="_linux"
 [ "$target" = "client" ]    && suffix="_client"
 [ "$target" = "universal" ] && suffix="_universal"
 [ "$target" = "windows" ]   && suffix="_windows"
