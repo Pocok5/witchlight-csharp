@@ -16,6 +16,15 @@ namespace Witchlight;
 /// </summary>
 public class WantedClaim
 {
+    /// <summary>
+    /// What the map service calls this ask, so the answer can name it.
+    ///
+    /// Minted by the service when the ask was queued. The mod reports against it
+    /// and never invents one, because the browser waiting on the answer knows the
+    /// ask by this name and by nothing else.
+    /// </summary>
+    public string Ticket { get; set; } = "";
+
     /// <summary>The uid of the player who asked, taken from their session.</summary>
     public string Uid { get; set; } = "";
 
@@ -61,6 +70,15 @@ public class WantedGuests
 /// </summary>
 public class EditedClaim
 {
+    /// <summary>
+    /// What the map service calls this ask, so the answer can name it.
+    ///
+    /// Minted by the service when the ask was queued. The mod reports against it
+    /// and never invents one, because the browser waiting on the answer knows the
+    /// ask by this name and by nothing else.
+    /// </summary>
+    public string Ticket { get; set; } = "";
+
     /// <summary>The claim to change, by the key <see cref="ClaimFeed"/> gave it.</summary>
     public string Key { get; set; } = "";
 
@@ -75,8 +93,33 @@ public class EditedClaim
 /// <summary>One claim a player asked to give up.</summary>
 public class UnwantedClaim
 {
+    /// <summary>What the map service calls this ask. See <see cref="WantedClaim.Ticket"/>.</summary>
+    public string Ticket { get; set; } = "";
+
     public string Key { get; set; } = "";
     public string Uid { get; set; } = "";
+}
+
+/// <summary>
+/// What the game made of one ask, on its way back to the browser that made it.
+///
+/// Carries the ticket the service minted, so the page recognises the answer to
+/// its own ask. Sent for what was done as well as for what was refused: a page
+/// told only about refusals cannot tell a claim that worked from a game server
+/// that stopped.
+/// </summary>
+public class ClaimAnswer
+{
+    public string Uid { get; set; } = "";
+    public string Ticket { get; set; } = "";
+
+    /// <summary>What was asked for, in the words the page shows.</summary>
+    public string Doing { get; set; } = "";
+
+    public bool Done { get; set; }
+
+    /// <summary>Why not, as one sentence, when it was refused. Empty when done.</summary>
+    public string Why { get; set; } = "";
 }
 
 /// <summary>The claim requests the service was holding, in one reply.</summary>
@@ -87,8 +130,14 @@ public class AskedClaims
     public List<UnwantedClaim> Remove { get; set; } = new();
 }
 
-/// <summary>How many requests of each kind the mod applied.</summary>
-public readonly record struct Claimed(int Made, int Changed, int Removed)
+/// <summary>
+/// How many requests of each kind the mod applied, and what to tell each player.
+///
+/// The answers travel with the counts because one pass over the asks produces
+/// both, and the caller posts them in one go.
+/// </summary>
+public readonly record struct Claimed(
+    int Made, int Changed, int Removed, List<ClaimAnswer> Answers)
 {
     public bool Anything => Made > 0 || Changed > 0 || Removed > 0;
 }
@@ -114,16 +163,19 @@ public static class Claiming
 {
     /// <summary>
     /// Applies every request in the service's reply that may be applied, and
-    /// returns how many of each kind landed.
+    /// returns how many of each kind landed, with what to tell each player.
     ///
-    /// Logs each refusal once, naming who and why. Sends nothing back to the
-    /// player, who is in a browser watching the page for the claim to appear.
+    /// Logs each refusal once, naming who and why, and answers the browser that
+    /// asked. The log is for the operator and the answer is for the player: the
+    /// rules a claim is judged by are the game's, and before this the reason
+    /// reached the log and nobody else.
     /// </summary>
     public static Claimed Apply(ICoreServerAPI api, AskedClaims? asked)
     {
+        var answers = new List<ClaimAnswer>();
         if (asked is null)
         {
-            return default;
+            return new Claimed(0, 0, 0, answers);
         }
 
         var made = 0;
@@ -138,8 +190,10 @@ public static class Claiming
             if (Make(api, wanted) is { } refusal)
             {
                 Refused(api, wanted.Uid, "claim that land", refusal);
+                Answer(answers, wanted.Ticket, wanted.Uid, "claim that land", refusal);
                 continue;
             }
+            Answer(answers, wanted.Ticket, wanted.Uid, "claim that land", null);
             made++;
         }
 
@@ -154,8 +208,10 @@ public static class Claiming
             if (Change(api, edit) is { } refusal)
             {
                 Refused(api, edit.Uid, "change that claim", refusal);
+                Answer(answers, edit.Ticket, edit.Uid, "change that claim", refusal);
                 continue;
             }
+            Answer(answers, edit.Ticket, edit.Uid, "change that claim", null);
             changed++;
         }
 
@@ -170,12 +226,14 @@ public static class Claiming
             if (Give(api, gone) is { } refusal)
             {
                 Refused(api, gone.Uid, "give up that claim", refusal);
+                Answer(answers, gone.Ticket, gone.Uid, "give up that claim", refusal);
                 continue;
             }
+            Answer(answers, gone.Ticket, gone.Uid, "give up that claim", null);
             removed++;
         }
 
-        return new Claimed(made, changed, removed);
+        return new Claimed(made, changed, removed, answers);
     }
 
     /// <summary>
@@ -184,6 +242,31 @@ public static class Claiming
     /// </summary>
     private static void Refused(ICoreServerAPI api, string uid, string doing, string why) =>
         api.Logger.Notification("[witchlight] {0} may not {1}: {2}", uid, doing, why);
+
+    /// <summary>
+    /// Words one answer for the browser that asked.
+    ///
+    /// An ask with no ticket came from a service older than this build. It is
+    /// still applied, and no answer is made for it, because there is nothing to
+    /// name the answer by and the page it came from is not watching for one.
+    /// </summary>
+    private static void Answer(
+        List<ClaimAnswer> answers, string ticket, string uid, string doing, string? why)
+    {
+        if (string.IsNullOrEmpty(ticket))
+        {
+            return;
+        }
+
+        answers.Add(new ClaimAnswer
+        {
+            Uid = uid,
+            Ticket = ticket,
+            Doing = doing,
+            Done = why is null,
+            Why = why ?? "",
+        });
+    }
 
     /// <summary>
     /// Changes what a claim is called and who it lets in. Returns why not, or

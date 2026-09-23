@@ -557,6 +557,12 @@ public partial class WitchlightSystem : ModSystem
                 () => Doing("making markers", () =>
                 {
                     var landed = Pending.Apply(api, _visibility, _pins, _origins, held);
+
+                    // Answered before the count is tested. A claim that was
+                    // refused outright lands nothing and counts nothing, and is
+                    // exactly the case the browser is waiting to be told about.
+                    service.ClaimsAnswered(landed.Claims.Answers);
+
                     if (!landed.Anything)
                     {
                         return;

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Net;
 using System.Net.Http;
@@ -486,6 +487,33 @@ public sealed class MapService : IDisposable
 
     /// <summary>Posts the world's clock, on its way to whoever is looking.</summary>
     public void World(string json) => Post(_world, json);
+
+    /// <summary>
+    /// Posts what the game made of the claims it just collected.
+    ///
+    /// Sent only when there is something to say, which is the tick a player asked
+    /// for a claim rather than every tick. The service holds each answer until
+    /// the browser that asked reads it, so a post that lands late still reaches
+    /// the page that is waiting.
+    /// </summary>
+    public void ClaimsAnswered(List<ClaimAnswer> answers)
+    {
+        if (answers.Count == 0)
+        {
+            return;
+        }
+
+        var json = JsonConvert.SerializeObject(answers);
+        _ = Task.Run(async () =>
+        {
+            var complaint = await Told("/claims/answered", json).ConfigureAwait(false);
+            if (complaint is not null)
+            {
+                _log.Warning(
+                    "[witchlight] could not tell the map what became of a claim: {0}", complaint);
+            }
+        });
+    }
 
     /// <summary>
     /// Posts the ground: chunks whose surface moved, as records, and chunks whose
