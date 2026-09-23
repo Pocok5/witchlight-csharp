@@ -21,7 +21,8 @@ namespace Witchlight;
 public static class Settings
 {
     /// <summary>The path of the settings file, beside the server's other mod settings.</summary>
-    public static string Path => System.IO.Path.Combine(GamePaths.ModConfig, "witchlight.conf");
+    public static string Path =>
+        System.IO.Path.GetFullPath(System.IO.Path.Combine(GamePaths.ModConfig, "witchlight.conf"));
 
     /// <summary>
     /// The root directory for map data, before any per-world directory inside it.
@@ -199,9 +200,10 @@ public static class Settings
     /// </summary>
     public static string? EnsureWritten(ICoreServerAPI api, string executable)
     {
-        if (File.Exists(Path))
+        var path = Path;
+        if (File.Exists(path))
         {
-            return Path;
+            return path;
         }
 
         try
@@ -215,7 +217,7 @@ public static class Settings
                 RedirectStandardError = true,
             };
             write.ArgumentList.Add("--config");
-            write.ArgumentList.Add(Path);
+            write.ArgumentList.Add(path);
             write.ArgumentList.Add("--vs-data");
             write.ArgumentList.Add(GamePaths.DataPath);
             // Written once; after that it is the operator's to change.
@@ -234,19 +236,19 @@ public static class Settings
             var complaint = writing.StandardError.ReadToEnd();
             writing.WaitForExit(WriteConfigMs);
 
-            if (!File.Exists(Path))
+            if (!File.Exists(path))
             {
                 api.Logger.Warning(
-                    "[witchlight] the map service did not write {0}: {1}", Path, complaint.Trim());
+                    "[witchlight] the map service did not write {0}: {1}", path, complaint.Trim());
                 return null;
             }
 
-            api.Logger.Notification("[witchlight] wrote default map settings to {0}", Path);
-            return Path;
+            api.Logger.Notification("[witchlight] wrote default map settings to {0}", path);
+            return path;
         }
         catch (Exception error)
         {
-            api.Logger.Error("[witchlight] could not write {0}: {1}", Path, error);
+            api.Logger.Error("[witchlight] could not write {0}: {1}", path, error);
             return null;
         }
     }
