@@ -21,8 +21,10 @@ namespace Witchlight;
 public static class Settings
 {
     /// <summary>The path of the settings file, beside the server's other mod settings.</summary>
-    public static string Path =>
-        System.IO.Path.GetFullPath(System.IO.Path.Combine(GamePaths.ModConfig, "witchlight.conf"));
+    public static string Path => FullPath(System.IO.Path.Combine(GamePaths.ModConfig, "witchlight.conf"));
+
+    /// <summary>The game's data directory, settled to one absolute path.</summary>
+    public static string DataPath => FullPath(GamePaths.DataPath);
 
     /// <summary>
     /// The root directory for map data, before any per-world directory inside it.
@@ -35,9 +37,10 @@ public static class Settings
         get
         {
             var told = Value("map_data");
-            return string.IsNullOrWhiteSpace(told)
-                ? System.IO.Path.Combine(GamePaths.DataPath, ExportDirName)
+            var path = string.IsNullOrWhiteSpace(told)
+                ? System.IO.Path.Combine(DataPath, ExportDirName)
                 : told.Trim();
+            return FullPath(path);
         }
     }
 
@@ -71,7 +74,7 @@ public static class Settings
         // An absent setting means on. Every singleplayer save shares one data
         // path, so with it off a save would write into the last world's map.
         PerWorld = On("per_world", byDefault: true);
-        _exports = MapDirectory.Settle(api, MapData, PerWorld);
+        _exports = FullPath(MapDirectory.Settle(api, MapData, PerWorld));
         Directory.CreateDirectory(_exports);
     }
 
@@ -208,7 +211,7 @@ public static class Settings
 
         try
         {
-            Directory.CreateDirectory(GamePaths.ModConfig);
+            Directory.CreateDirectory(System.IO.Path.GetDirectoryName(path)!);
 
             var write = new ProcessStartInfo(executable)
             {
@@ -219,7 +222,7 @@ public static class Settings
             write.ArgumentList.Add("--config");
             write.ArgumentList.Add(path);
             write.ArgumentList.Add("--vs-data");
-            write.ArgumentList.Add(GamePaths.DataPath);
+            write.ArgumentList.Add(DataPath);
             // Written once; after that it is the operator's to change.
             write.ArgumentList.Add("--per-world");
             write.ArgumentList.Add("true");
@@ -256,6 +259,8 @@ public static class Settings
     /// <summary>How long to wait for the service to write the file, in milliseconds.
     /// Long enough for a cold start on a slow disk.</summary>
     private const int WriteConfigMs = 15000;
+
+    private static string FullPath(string path) => System.IO.Path.GetFullPath(path);
 
     /// <summary>
     /// Returns one setting's value by name, or null when the file does not set it.
