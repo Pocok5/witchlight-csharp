@@ -125,7 +125,7 @@ public sealed class ServiceProcess : IDisposable
                 UseShellExecute = false,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
-                WorkingDirectory = GamePaths.DataPath,
+                WorkingDirectory = Settings.DataPath,
             };
             started.ArgumentList.Add("--config");
             started.ArgumentList.Add(_config);
